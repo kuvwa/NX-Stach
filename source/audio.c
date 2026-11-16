@@ -26,19 +26,12 @@ static bool ready = false;
 static s16 *samples[SFX_COUNT];
 static size_t sample_bytes[SFX_COUNT];
 
-static unsigned int noise_state = 0x1234567u;
-
-static float next_noise(void)
+// «Стеклянный» тон: основной тон + негармонический призвук,
+// мягкая атака и быстрое, но плавное затухание.
+static void add_glass(s16 *dst, int *frame, int frames, float freq, float amp,
+                      float decay)
 {
-    noise_state = noise_state * 1664525u + 1013904223u;
-    return ((float)((noise_state >> 9) & 0x3FFF) / 8192.0f) - 1.0f;
-}
-
-// «Цоканье»: низкий тон + щелчок шума, быстрое затухание.
-static void add_click(s16 *dst, int *frame, int frames, float freq, float amp,
-                      float decay, float noise_mix)
-{
-    const int attack = SAMPLE_RATE / 800;
+    const int attack = SAMPLE_RATE / 400;   // ~2.5 мс
 
     for (int i = 0; i < frames && *frame < MAX_FRAMES; i++, (*frame)++) {
         float t = (float)i / (float)SAMPLE_RATE;
@@ -47,8 +40,14 @@ static void add_click(s16 *dst, int *frame, int frames, float freq, float amp,
         if (i < attack)
             env *= (float)i / (float)attack;
 
-        float tone = sinf(2.0f * 3.14159265f * freq * t);
-        float v = (tone * (1.0f - noise_mix) + next_noise() * noise_mix) * env * amp;
+        float w = 2.0f * 3.14159265f * t;
+
+        float v = sinf(w * freq) * 0.72f
+                + sinf(w * freq * 2.02f) * 0.20f
+                + sinf(w * freq * 3.07f) * 0.08f;
+
+        v *= env * amp;
+
         int s = (int)(v * 32767.0f);
 
         if (s > 32767) s = 32767;
@@ -68,33 +67,39 @@ static void build_sounds(void)
 
     int f;
 
+    // навигация: короткий стеклянный «тинь»
     f = 0;
-    add_click(samples[SFX_NAV], &f, 520, 420.0f, 0.16f, 95.0f, 0.55f);
+    add_glass(samples[SFX_NAV], &f, 1500, 1480.0f, 0.13f, 42.0f);
     sample_bytes[SFX_NAV] = (size_t)f * CHANNELS * sizeof(s16);
 
+    // подтверждение: два стеклянных тона вверх
     f = 0;
-    add_click(samples[SFX_OK], &f, 520, 520.0f, 0.15f, 80.0f, 0.50f);
-    add_click(samples[SFX_OK], &f, 900, 700.0f, 0.14f, 55.0f, 0.45f);
+    add_glass(samples[SFX_OK], &f, 1200, 1175.0f, 0.12f, 26.0f);
+    add_glass(samples[SFX_OK], &f, 2600, 1568.0f, 0.12f, 20.0f);
     sample_bytes[SFX_OK] = (size_t)f * CHANNELS * sizeof(s16);
 
+    // назад: два тона вниз
     f = 0;
-    add_click(samples[SFX_BACK], &f, 520, 430.0f, 0.15f, 85.0f, 0.55f);
-    add_click(samples[SFX_BACK], &f, 800, 300.0f, 0.14f, 60.0f, 0.50f);
+    add_glass(samples[SFX_BACK], &f, 1300, 1318.0f, 0.12f, 26.0f);
+    add_glass(samples[SFX_BACK], &f, 2000, 988.0f, 0.11f, 22.0f);
     sample_bytes[SFX_BACK] = (size_t)f * CHANNELS * sizeof(s16);
 
+    // ошибка: низкий, глухой стеклянный удар
     f = 0;
-    add_click(samples[SFX_ERROR], &f, 2600, 180.0f, 0.17f, 22.0f, 0.65f);
+    add_glass(samples[SFX_ERROR], &f, 4200, 392.0f, 0.14f, 9.0f);
     sample_bytes[SFX_ERROR] = (size_t)f * CHANNELS * sizeof(s16);
 
+    // запуск: стеклянное арпеджио
     f = 0;
-    add_click(samples[SFX_START], &f, 700, 392.0f, 0.14f, 60.0f, 0.50f);
-    add_click(samples[SFX_START], &f, 900, 523.0f, 0.14f, 55.0f, 0.48f);
-    add_click(samples[SFX_START], &f, 1400, 659.0f, 0.15f, 40.0f, 0.45f);
+    add_glass(samples[SFX_START], &f, 1800, 880.0f, 0.11f, 18.0f);
+    add_glass(samples[SFX_START], &f, 1800, 1108.0f, 0.11f, 17.0f);
+    add_glass(samples[SFX_START], &f, 3200, 1318.0f, 0.12f, 13.0f);
     sample_bytes[SFX_START] = (size_t)f * CHANNELS * sizeof(s16);
 
+    // тумблер: двойной стеклянный «клик»
     f = 0;
-    add_click(samples[SFX_TOGGLE], &f, 420, 760.0f, 0.15f, 140.0f, 0.60f);
-    add_click(samples[SFX_TOGGLE], &f, 700, 480.0f, 0.14f, 95.0f, 0.60f);
+    add_glass(samples[SFX_TOGGLE], &f, 900, 1760.0f, 0.12f, 60.0f);
+    add_glass(samples[SFX_TOGGLE], &f, 1600, 2093.0f, 0.11f, 38.0f);
     sample_bytes[SFX_TOGGLE] = (size_t)f * CHANNELS * sizeof(s16);
 }
 
