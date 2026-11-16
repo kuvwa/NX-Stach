@@ -941,6 +941,30 @@ static void show_splash(Framebuffer *fb, FT_Face face, FT_Face face_small)
     }
 }
 
+static const char *g_stage = "init";
+static int g_detail = -1;
+
+static void beat(const char *stage, int detail)
+{
+    g_stage = stage;
+    g_detail = detail;
+}
+
+static int g_beat_tick = 0;
+
+static void beat_flush(void)
+{
+    if (++g_beat_tick % 12 != 0)
+        return;
+
+    FILE *f = fopen("sdmc:/switch/NX-Stach/last_frame.txt", "w");
+
+    if (!f) return;
+
+    fprintf(f, "stage=%s detail=%d\n", g_stage, g_detail);
+    fclose(f);
+}
+
 /* --------------------------------- main --------------------------------- */
 
 int main(int argc, char **argv)
@@ -1042,6 +1066,8 @@ int main(int argc, char **argv)
         view[view_count++] = i;
 
     while (appletMainLoop()) {
+        beat("input", 0);
+
         padUpdate(&pad);
         u32 kDown = padGetButtonsDown(&pad);
         u32 held = padGetButtons(&pad);
@@ -1398,6 +1424,8 @@ int main(int argc, char **argv)
         u32 *pixels = (u32 *)framebufferBegin(&fb, &stride);
         fb_width = stride / sizeof(u32);
 
+        beat("clear", 0);
+
         fill_bg(pixels, COLOR_BG);
         clip_top = 0;
         clip_bottom = H;
@@ -1414,6 +1442,8 @@ int main(int argc, char **argv)
 
                 if (y + CARD_H < HEADER_H) continue;
                 if (y > H) continue;
+
+                beat("tile", i);
 
                 int game_index = view[i];
                 const u32 *cover = library_cover(games[game_index].title_id);
@@ -1480,6 +1510,8 @@ int main(int argc, char **argv)
                 }
             }
 
+            beat("header", 0);
+
             rect(pixels, 0, 0, W, HEADER_H, COLOR_BG);
 
             draw_text_shine(face, pixels, 55, 62, "NX-Stach", (int)shine_counter);
@@ -1511,6 +1543,8 @@ int main(int argc, char **argv)
                            (int)grid_scroll);
         } else if (view_count > 0) {
             const Game *game = &games[view[selected]];
+
+            beat("ach_list", 0);
 
             build_list(game->steam_appid, achievements, achievement_count,
                        flags, flag_count, only_locked != 0);
@@ -1681,6 +1715,9 @@ int main(int argc, char **argv)
 
             toast_frames--;
         }
+
+        beat("present", 0);
+        beat_flush();
 
         framebufferEnd(&fb);
 
