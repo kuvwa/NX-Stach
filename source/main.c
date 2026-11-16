@@ -38,7 +38,7 @@
 #define HEADER_H 168
 
 // обложки временно выключены (декодер валит приложение)
-#define COVERS_ENABLED 0
+#define COVERS_ENABLED 1
 
 #define ACH_ICON_SIZE 44
 #define ROW_H 72
