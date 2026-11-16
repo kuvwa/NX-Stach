@@ -13,6 +13,9 @@
 static bool socket_ready = false;
 static bool ssl_ready = false;
 static const char *last_error = "NOT_STARTED";
+static size_t last_body_length = 0;
+
+size_t net_last_body_length(void) { return last_body_length; }
 static char last_error_buffer[64];
 const char *net_last_error(void) { return last_error; }
 
@@ -277,6 +280,7 @@ bool net_https_get(const char *host, const char *path,
     if (chunked && !decode_chunked(response, &body_length)) { last_error = "CHUNK_DECODE"; goto cleanup; }
 
     response[body_length] = '\0';
+    last_body_length = body_length;
     success = body_length > 0;
     last_error = success ? "OK" : "EMPTY_BODY";
 

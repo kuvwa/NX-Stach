@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
+#include <sys/stat.h>
+#include <errno.h>
 
 #include "steam.h"
 #include "save.h"
@@ -12,6 +14,7 @@
 #include "gamesave.h"
 #include "library.h"
 #include "history.h"
+#include "steamsearch.h"
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -537,10 +540,17 @@ static void ach_icons_clear(void)
 static u32 *load_achievement_icon(const char *appid, const char *id)
 {
     char path[256];
-    snprintf(path, sizeof(path), "romfs:/catalog/icons/%.32s/%.96s.jpg",
-             appid, id);
 
+    snprintf(path, sizeof(path),
+             "sdmc:/switch/NX-Stach/catalog/icons/%.32s/%.96s.jpg", appid, id);
     FILE *file = fopen(path, "rb");
+
+    if (!file) {
+        snprintf(path, sizeof(path), "romfs:/catalog/icons/%.32s/%.96s.jpg",
+                 appid, id);
+        file = fopen(path, "rb");
+    }
+
     if (!file) return NULL;
 
     if (fseek(file, 0, SEEK_END) != 0) { fclose(file); return NULL; }
@@ -647,10 +657,16 @@ static int load_catalog(const char *appid,
                         SteamAchievement *achievements,
                         int max_achievements)
 {
-    char path[128];
-    snprintf(path, sizeof(path), "romfs:/catalog/%.32s.json", appid);
+    char path[192];
 
+    snprintf(path, sizeof(path), "sdmc:/switch/NX-Stach/catalog/%.32s.json", appid);
     FILE *file = fopen(path, "rb");
+
+    if (!file) {
+        snprintf(path, sizeof(path), "romfs:/catalog/%.32s.json", appid);
+        file = fopen(path, "rb");
+    }
+
     if (!file) return -1;
 
     if (fseek(file, 0, SEEK_END) != 0) { fclose(file); return -1; }
@@ -873,6 +889,29 @@ static void build_list(const char *appid, const SteamAchievement *achievements,
     list_total_height = y;
 }
 
+static void draw_progress(Framebuffer *fb, FT_Face face, FT_Face face_small,
+                          const char *title, const char *line, int percent)
+{
+    u32 stride;
+    u32 *px = (u32 *)framebufferBegin(fb, &stride);
+    fb_width = stride / sizeof(u32);
+
+    fill_bg(px, COLOR_BG);
+
+    draw_text(face, px, 55, 300, title);
+
+    set_text_color(170, 175, 185);
+    draw_text(face_small, px, 55, 340, line);
+    reset_text_color();
+
+    round_rect(px, 55, 370, 1170, 16, 8, COLOR_TRACK);
+
+    if (percent > 0)
+        round_rect(px, 55, 370, 1170 * percent / 100, 16, 8, COLOR_ACCENT);
+
+    framebufferEnd(fb);
+}
+
 /* ------------------------------- стики ------------------------------- */
 
 typedef struct {
@@ -999,6 +1038,15 @@ int main(int argc, char **argv)
     float pulse = 1.0f;
     float toggle_anim = 0.0f;
 
+    SteamSearchResult steam_results[STEAM_MAX_RESULTS];
+    int steam_result_count = 0;
+    int steam_selected = 0;
+    int steam_mode = 0;      // 1 = окно выбора игры из Steam
+    int import_request = 0;
+    int import_title_index = 0;
+    char toast[128] = "";
+    int toast_frames = 0;
+
     bool touch_down = false;
     int touch_start_x = 0, touch_start_y = 0;
     int touch_last_x = 0, touch_last_y = 0;
@@ -1076,8 +1124,25 @@ int main(int argc, char **argv)
 
         bool consumed = false;
 
+        if (steam_mode == 1) {
+            if (steam_result_count > 0) {
+                if (kDown & HidNpadButton_Down)
+                    steam_selected = (steam_selected + 1) % steam_result_count;
+                if (kDown & HidNpadButton_Up)
+                    steam_selected = (steam_selected + steam_result_count - 1) %
+                                     steam_result_count;
+                if (kDown & HidNpadButton_A)
+                    import_request = 1;
+            }
+
+            if (kDown & HidNpadButton_B)
+                steam_mode = 0;
+
+            consumed = true;
+        }
+
         /* ------------------------------- тапы ------------------------------- */
-        if (touch_tapped) {
+        if (!consumed && touch_tapped) {
             if (screen == 0) {
                 if (tap_y >= 82 && tap_y <= 134) {
                     char query[64];
@@ -1134,6 +1199,29 @@ int main(int argc, char **argv)
                 view_count = 0;
                 for (int i = 0; i < game_count; i++)
                     view[view_count++] = i;
+
+                consumed = true;
+            }
+
+            if (!consumed && screen == 0 && (kDown & HidNpadButton_X) && view_count > 0) {
+                char query[64];
+                snprintf(query, sizeof(query), "%s", games[view[selected]].name);
+
+                if (ask_search(query, sizeof(query)) && query[0]) {
+                    steam_result_count = 0;
+                    steam_selected = 0;
+
+                    steam_result_count = steam_search(query, steam_results,
+                                                      STEAM_MAX_RESULTS);
+
+                    if (steam_result_count > 0) {
+                        steam_mode = 1;
+                        import_title_index = view[selected];
+                    } else {
+                        snprintf(toast, sizeof(toast), "В Steam ничего не найдено");
+                        toast_frames = 150;
+                    }
+                }
 
                 consumed = true;
             }
@@ -1361,6 +1449,125 @@ int main(int argc, char **argv)
 
             if (!touch_dragged)
                 list_scroll += (list_target - list_scroll) * 0.14f;
+        }
+
+        /* --------------------------- импорт каталога --------------------------- */
+        if (import_request && import_title_index >= 0 &&
+            import_title_index < game_count && steam_result_count > 0) {
+            import_request = 0;
+            steam_mode = 0;
+
+            Game *g = &games[import_title_index];
+            int appid = steam_results[steam_selected].appid;
+
+            char appid_text[32];
+            snprintf(appid_text, sizeof(appid_text), "%d", appid);
+
+            char title_line[220];
+            snprintf(title_line, sizeof(title_line), "Импорт: %s",
+                     steam_results[steam_selected].name);
+
+            draw_progress(&fb, face, face_small, title_line,
+                          "Скачиваем каталог достижений...", 6);
+
+            char *json_buf = malloc(512 * 1024);
+            int json_len = json_buf
+                ? steam_fetch_achievements(appid, json_buf, 512 * 1024) : -1;
+
+            SteamAchievement tmp[MAX_ACHIEVEMENTS];
+            int tmp_count = 0;
+
+            if (json_len > 0) {
+                mkdir("sdmc:/switch/NX-Stach", 0777);
+                mkdir("sdmc:/switch/NX-Stach/catalog", 0777);
+                mkdir("sdmc:/switch/NX-Stach/catalog/icons", 0777);
+
+                char dir[200];
+                snprintf(dir, sizeof(dir),
+                         "sdmc:/switch/NX-Stach/catalog/icons/%s", appid_text);
+                mkdir(dir, 0777);
+
+                char path[220];
+                snprintf(path, sizeof(path),
+                         "sdmc:/switch/NX-Stach/catalog/%s.json", appid_text);
+
+                FILE *f = fopen(path, "wb");
+                if (f) {
+                    fwrite(json_buf, 1, (size_t)json_len, f);
+                    fclose(f);
+                }
+
+                tmp_count = steam_parse_achievements(json_buf, tmp, MAX_ACHIEVEMENTS);
+            }
+
+            free(json_buf);
+
+            if (tmp_count > 0) {
+                unsigned char *icon = malloc(256 * 1024);
+
+                for (int i = 0; i < tmp_count; i++) {
+                    char line[160];
+                    snprintf(line, sizeof(line), "Иконки %d / %d", i + 1, tmp_count);
+
+                    draw_progress(&fb, face, face_small, title_line, line,
+                                  10 + 85 * i / tmp_count);
+
+                    if (!icon) break;
+
+                    int got = steam_fetch_icon(appid, tmp[i].icon, icon, 256 * 1024);
+
+                    if (got > 0) {
+                        char ipath[340];
+                        snprintf(ipath, sizeof(ipath),
+                                 "sdmc:/switch/NX-Stach/catalog/icons/%s/%.96s.jpg",
+                                 appid_text, tmp[i].id);
+
+                        FILE *fi = fopen(ipath, "wb");
+                        if (fi) {
+                            fwrite(icon, 1, (size_t)got, fi);
+                            fclose(fi);
+                        }
+                    }
+                }
+
+                free(icon);
+
+                games_json_set_appid(g->title_id, g->name, appid_text);
+                snprintf(g->steam_appid, sizeof(g->steam_appid), "%s", appid_text);
+
+                achievement_count = load_catalog(g->steam_appid, achievements,
+                                                 MAX_ACHIEVEMENTS);
+                flag_count = load_save_flags(g->steam_appid, flags, MAX_ACHIEVEMENTS);
+
+                unlocked_count = 0;
+                for (int i = 0; i < achievement_count; i++)
+                    if (achievement_unlocked(g->steam_appid, i, &achievements[i],
+                                             flags, flag_count))
+                        unlocked_count++;
+
+                ach_icons_load(g->steam_appid, achievement_count, achievements);
+                playtime_minutes = game_playtime_minutes(g->title_id);
+                build_header_bg(g->title_id);
+
+                list_scroll = list_target = 0.0f;
+                only_locked = 0;
+
+                for (int i = 0; i < view_count; i++) {
+                    if (view[i] == import_title_index) {
+                        selected = i;
+                        break;
+                    }
+                }
+
+                screen = 1;
+
+                snprintf(toast, sizeof(toast), "Готово: %d достижений",
+                         achievement_count);
+                toast_frames = 180;
+            } else {
+                snprintf(toast, sizeof(toast), "Не удалось скачать достижения");
+                toast_frames = 180;
+            }
         }
 
         /* ------------------------------ отрисовка ------------------------------ */
@@ -1627,6 +1834,63 @@ int main(int argc, char **argv)
             reset_text_color();
 
             draw_toggle(pixels, 1138, 277, toggle_anim);
+        }
+
+        if (steam_mode == 1) {
+            for (int py = 0; py < H; py++) {
+                for (int px = 0; px < W; px++) {
+                    u32 *dst = &pixels[(size_t)py * fb_width + px];
+                    *dst = blend_px(*dst, RGBA8_MAXALPHA(0, 0, 0), 150);
+                }
+            }
+
+            int w = 660;
+            int rows = steam_result_count > 0 ? steam_result_count : 1;
+            int h = 120 + rows * 52;
+            int x = (W - w) / 2;
+            int y = (H - h) / 2;
+
+            round_rect(pixels, x, y, w, h, 22, RGBA8_MAXALPHA(42, 45, 51));
+
+            draw_text(face_small, pixels, x + 28, y + 46, "Найдено в Steam");
+
+            for (int i = 0; i < steam_result_count; i++) {
+                int ry = y + 70 + i * 52;
+
+                if (i == steam_selected)
+                    round_rect(pixels, x + 16, ry, w - 32, 44, 12,
+                               RGBA8_MAXALPHA(62, 66, 74));
+
+                if (i == steam_selected) set_text_color(240, 245, 252);
+                else set_text_color(190, 195, 205);
+
+                clip_left = x + 30;
+                clip_right = x + w - 30;
+                draw_text(face_small, pixels, x + 30, ry + 28,
+                          steam_results[i].name);
+                clip_left = 0;
+                clip_right = W;
+                reset_text_color();
+            }
+
+            set_text_color(140, 145, 155);
+            draw_text(face_small, pixels, x + 28, y + h - 20,
+                      "A: импортировать    B: отмена");
+            reset_text_color();
+        }
+
+        if (toast_frames > 0) {
+            int tw = measure_text(face_small, toast);
+            int w = tw + 48;
+            int x = (W - w) / 2;
+            int y = H - 110;
+
+            round_rect(pixels, x, y, w, 46, 14, RGBA8_MAXALPHA(52, 56, 63));
+            set_text_color(235, 240, 250);
+            draw_text(face_small, pixels, x + 24, y + 30, toast);
+            reset_text_color();
+
+            toast_frames--;
         }
 
         framebufferEnd(&fb);
