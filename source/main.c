@@ -187,6 +187,9 @@ static int draw_codepoint(FT_Face face, u32 *fb, int x, int y, u32 c)
             if (px < clip_left || px >= clip_right) continue;
             if (py < clip_top || py >= clip_bottom) continue;
 
+            // жёсткая страховка: никогда не писать за пределы кадра
+            if (px < 0 || px >= W || py < 0 || py >= H) continue;
+
             u8 a = b->buffer[j * b->pitch + i];
             if (!a) continue;
 
@@ -1791,8 +1794,8 @@ int main(int argc, char **argv)
 
                     clip_left = x + 8;
                     clip_right = x + CARD_W - 8;
-                    clip_top = strip_y;
-                    clip_bottom = y + CARD_H;
+                    clip_top = strip_y > 0 ? strip_y : 0;
+                    clip_bottom = (y + CARD_H) < H ? (y + CARD_H) : H;
 
                     const char *name = games[game_index].name;
                     int name_w = measure_text(face_small, name);
