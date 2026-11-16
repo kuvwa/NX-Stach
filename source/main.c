@@ -5,6 +5,7 @@
 #include "steam.h"
 #include "save.h"
 #include "net.h"
+#include "gamesave.h"
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
@@ -107,6 +108,41 @@ static int measure_text(FT_Face face, const char *str)
 
 
 #define MAX_ACHIEVEMENTS 100
+
+// Какие игры умеем читать из их сейва на консоли.
+typedef struct {
+    const char *appid;
+    u64 title_id;
+    const char *save_path;
+} SaveSource;
+
+static const SaveSource SAVE_SOURCES[] = {
+    { "219150", 0x0100D0E00E51E000ULL, "/HotlineMiami" },
+};
+
+static int load_save_flags(const char *appid, u8 *flags, int max_flags)
+{
+    if (!appid) return -1;
+
+    for (unsigned i = 0; i < sizeof(SAVE_SOURCES) / sizeof(SAVE_SOURCES[0]); i++) {
+        if (strcmp(SAVE_SOURCES[i].appid, appid) == 0)
+            return gamesave_read_unlocked(SAVE_SOURCES[i].title_id,
+                                          SAVE_SOURCES[i].save_path,
+                                          flags, max_flags);
+    }
+
+    return -1;
+}
+
+static bool achievement_unlocked(const char *appid, int index,
+                                 const SteamAchievement *achievement,
+                                 const u8 *flags, int flag_count)
+{
+    if (flag_count > 0)
+        return index < flag_count && flags[index] != 0;
+
+    return save_is_unlocked(appid, achievement->id);
+}
 
 static int load_catalog(const char *appid,
                         SteamAchievement *achievements,
@@ -439,9 +475,15 @@ int main(int argc, char **argv)
         ? load_catalog("219150", achievements, MAX_ACHIEVEMENTS)
         : -1;
 
+    u8 save_flags[MAX_ACHIEVEMENTS] = {0};
+    int save_flag_count = 0;
+
     int selected = 0;
     int game_screen = 0;
     int achievement_offset = 0;
+
+    save_flag_count = load_save_flags(games[0].appid, save_flags,
+                                      MAX_ACHIEVEMENTS);
 
     int diagnostic_screen = 0;
     Result diagnostic_result = 0;
@@ -454,12 +496,6 @@ int main(int argc, char **argv)
         u32 kDown = padGetButtonsDown(&pad);
 
         if (kDown & HidNpadButton_Plus) break;
-
-        if ((kDown & HidNpadButton_X) && save_ready &&
-            achievement_count > achievement_offset) {
-            save_unlock(games[selected].appid,
-                        achievements[achievement_offset].id);
-        }
 
         if (diagnostic_screen) {
             if (kDown & HidNpadButton_B)
@@ -475,8 +511,16 @@ int main(int argc, char **argv)
                 diagnostic_screen = 1;
             }
 
-            if (kDown & HidNpadButton_Right) selected = (selected + 1) % game_count;
-            if (kDown & HidNpadButton_Left) selected = (selected + game_count - 1) % game_count;
+            if (kDown & HidNpadButton_Right) {
+                selected = (selected + 1) % game_count;
+                save_flag_count = load_save_flags(games[selected].appid,
+                                                  save_flags, MAX_ACHIEVEMENTS);
+            }
+            if (kDown & HidNpadButton_Left) {
+                selected = (selected + game_count - 1) % game_count;
+                save_flag_count = load_save_flags(games[selected].appid,
+                                                  save_flags, MAX_ACHIEVEMENTS);
+            }
             if (kDown & HidNpadButton_A) {
                 achievement_count = -1;
                 snprintf(sync_status, sizeof(sync_status),
@@ -515,6 +559,9 @@ int main(int argc, char **argv)
                              : "Steam sync failed");
                 }
 
+                save_flag_count = load_save_flags(games[selected].appid,
+                                                  save_flags, MAX_ACHIEVEMENTS);
+
                 achievement_offset = 0;
                 game_screen = 1;
             }
@@ -523,7 +570,7 @@ int main(int argc, char **argv)
             if ((kDown & HidNpadButton_Up) && achievement_offset > 0)
                 achievement_offset--;
             if ((kDown & HidNpadButton_Down) &&
-                achievement_offset + 4 < achievement_count)
+                achievement_offset + 4 <= achievement_count - 1)
                 achievement_offset++;
         }
 
@@ -609,8 +656,9 @@ int main(int argc, char **argv)
 
             int unlocked_count = 0;
             for (int i = 0; i < achievement_count; i++) {
-                if (save_is_unlocked(games[selected].appid,
-                                     achievements[i].id))
+                if (achievement_unlocked(games[selected].appid, i,
+                                         &achievements[i],
+                                         save_flags, save_flag_count))
                     unlocked_count++;
             }
 
@@ -632,8 +680,9 @@ int main(int argc, char **argv)
                 int index = achievement_offset + i;
                 if (index >= achievement_count) break;
 
-                bool unlocked = save_is_unlocked(
-                    games[selected].appid, achievements[index].id);
+                bool unlocked = achievement_unlocked(
+                    games[selected].appid, index, &achievements[index],
+                    save_flags, save_flag_count);
 
                 int y = 310 + i * 65;
                 u32 color = unlocked
@@ -650,11 +699,18 @@ int main(int argc, char **argv)
                 draw_text(face, pixels, 85, y + 38, row_text);
             }
 
-            draw_text(face, pixels, 55, 600,
-                "X: Unlock first visible achievement (test)");
-            draw_text(face, pixels, 55, 645,
+            char source_line[128];
+            if (save_flag_count > 0)
+                snprintf(source_line, sizeof(source_line),
+                         "Progress: from game save (%d flags)", save_flag_count);
+            else
+                snprintf(source_line, sizeof(source_line),
+                         "Progress: progress.json (save read failed: %s)",
+                         gamesave_last_error());
+
+            draw_text(face, pixels, 55, 640, source_line);
+            draw_text(face, pixels, 55, 680,
                 save_ready ? "SD card: READY" : "SD card: ERROR");
-            draw_text(face, pixels, 55, 680, save_status());
         }
 
         framebufferEnd(&fb);

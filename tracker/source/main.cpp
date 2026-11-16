@@ -8,6 +8,10 @@
 #include <cctype>
 
 // Приводит любой id к виду 0100D0E00E51E000 (16 hex, верхний регистр).
+// Младшие 12 бит обнуляются: pmdmnt отдаёт Program ID (...E001),
+// а ns и games.json работают с Title ID (...E000).
+#define TITLE_ID_MASK 0xFFFFFFFFFFFFF000ULL
+
 static void normalizeId(const char* in, char* out, size_t size) {
     char tmp[64] = {0};
     size_t j = 0;
@@ -28,8 +32,9 @@ static void normalizeId(const char* in, char* out, size_t size) {
         tmp[16] = 0;
     }
 
+    u64 value = strtoull(tmp[0] ? tmp : "0", NULL, 16);
     snprintf(out, size, "%016llX",
-             (unsigned long long)strtoull(tmp[0] ? tmp : "0", NULL, 16));
+             (unsigned long long)(value & TITLE_ID_MASK));
 }
 
 static bool findGame(u64 programId, char* gameName, size_t nameSize,
@@ -51,7 +56,7 @@ static bool findGame(u64 programId, char* gameName, size_t nameSize,
 
     char currentId[17];
     snprintf(currentId, sizeof(currentId), "%016llX",
-             (unsigned long long)programId);
+             (unsigned long long)(programId & TITLE_ID_MASK));
 
     bool found = false;
     size_t index;
@@ -107,7 +112,7 @@ static void getGameInfo(char* line1, size_t s1, char* line2, size_t s2) {
 
     if (R_FAILED(rc)) {
         snprintf(line1, s1, "pm:dmnt error: 0x%08X", (unsigned)rc);
-        snprintf(line2, s2, "");
+        if (s2) line2[0] = 0;
         return;
     }
 
@@ -135,12 +140,13 @@ static void getGameInfo(char* line1, size_t s1, char* line2, size_t s2) {
     char gameName[128] = "";
     char steamAppId[32] = "";
     char consoleName[128] = "";
+    const u64 titleId = programId & TITLE_ID_MASK;
 
-    bool inList = findGame(programId, gameName, sizeof(gameName),
+    bool inList = findGame(titleId, gameName, sizeof(gameName),
                            steamAppId, sizeof(steamAppId));
-    bool named = getAppName(programId, consoleName, sizeof(consoleName));
+    bool named = getAppName(titleId, consoleName, sizeof(consoleName));
 
-    snprintf(line2, s2, "ID: %016llX", (unsigned long long)programId);
+    snprintf(line2, s2, "ID: %016llX", (unsigned long long)titleId);
 
     if (inList) {
         if (steamAppId[0])
@@ -150,7 +156,7 @@ static void getGameInfo(char* line1, size_t s1, char* line2, size_t s2) {
     } else if (named) {
         snprintf(line1, s1, "%s", consoleName);
         snprintf(line2, s2, "ID: %016llX (no Steam ID)",
-                 (unsigned long long)programId);
+                 (unsigned long long)titleId);
     } else {
         snprintf(line1, s1, "Unknown game");
     }
