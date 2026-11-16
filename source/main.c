@@ -1236,6 +1236,42 @@ int main(int argc, char **argv)
                            tap_x >= 330 && tap_x <= 950 &&
                            tap_y >= 560 && tap_y <= 624) {
                     kDown |= HidNpadButton_Y;
+                } else if (achievement_count > 0 && flag_count <= 0 &&
+                           tap_y >= LIST_TOP && tap_y <= LIST_BOTTOM) {
+                    Game *g = &games[view[selected]];
+                    int rel = tap_y - LIST_TOP + (int)list_scroll;
+
+                    for (int i = 0; i < list_row_count; i++) {
+                        ListRow *row = &list_rows[i];
+
+                        if (rel < row->y || rel >= row->y + row->height)
+                            continue;
+
+                        if (row->kind != 1)
+                            break;
+
+                        const char *id = achievements[row->ach].id;
+
+                        if (save_is_unlocked(g->steam_appid, id)) {
+                            save_lock(g->steam_appid, id);
+                        } else {
+                            save_unlock(g->steam_appid, id);
+                            history_mark(g->steam_appid, id,
+                                         (u64)time(NULL));
+                            history_save();
+                        }
+
+                        unlocked_count = 0;
+                        for (int k = 0; k < achievement_count; k++)
+                            if (achievement_unlocked(g->steam_appid, k,
+                                                     &achievements[k],
+                                                     flags, flag_count))
+                                unlocked_count++;
+
+                        break;
+                    }
+
+                    consumed = true;
                 } else if (tap_y >= 276 && tap_y <= 332) {
                     only_locked = !only_locked;
                     list_scroll = list_target = 0.0f;
@@ -1916,6 +1952,13 @@ int main(int argc, char **argv)
             reset_text_color();
 
             draw_toggle(pixels, 1138, 277, toggle_anim);
+
+            if (achievement_count > 0 && flag_count <= 0) {
+                set_text_color(118, 124, 136);
+                draw_text(face_small, pixels, 55, 712,
+                          "\u0422\u0430\u043f \u043f\u043e \u0434\u043e\u0441\u0442\u0438\u0436\u0435\u043d\u0438\u044e \u2014 \u043e\u0442\u043c\u0435\u0442\u0438\u0442\u044c \u0432\u0440\u0443\u0447\u043d\u0443\u044e");
+                reset_text_color();
+            }
         }
 
         if (steam_mode == 1) {
