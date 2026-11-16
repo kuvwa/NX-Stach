@@ -943,6 +943,7 @@ static void show_splash(Framebuffer *fb, FT_Face face, FT_Face face_small)
 
 static const char *g_stage = "init";
 static int g_detail = -1;
+static unsigned long long g_detail_id = 0;
 
 static void beat(const char *stage, int detail)
 {
@@ -957,7 +958,8 @@ static void beat_flush(void)
 
     if (!f) return;
 
-    fprintf(f, "stage=%s detail=%d\n", g_stage, g_detail);
+    fprintf(f, "stage=%s detail=%d id=%016llX\n", g_stage, g_detail,
+            g_detail_id);
     fclose(f);
 }
 
@@ -1439,12 +1441,13 @@ int main(int argc, char **argv)
                 if (y + CARD_H < HEADER_H) continue;
                 if (y > H) continue;
 
+                int game_index = view[i];
+
+                g_detail_id = (unsigned long long)games[game_index].title_id;
                 beat("tile", i);
 
-                if ((i % 3) == 0)
+                if ((i % 3) == 0 || i == selected)
                     beat_flush();
-
-                int game_index = view[i];
                 const u32 *cover = library_cover(games[game_index].title_id);
 
                 if (i == selected) {
