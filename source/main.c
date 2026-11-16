@@ -13,7 +13,6 @@
 #include "gamesave.h"
 #include "library.h"
 #include "history.h"
-#include "audio.h"
 #include "recipe.h"
 
 #include <ft2build.h>
@@ -984,7 +983,6 @@ int main(int argc, char **argv)
     framebufferCreate(&fb, nwindowGetDefault(), W, H, PIXEL_FORMAT_RGBA_8888, 2);
     framebufferMakeLinear(&fb);
 
-    audio_init();
 
     show_splash(&fb, face, face_small);
 
@@ -1149,7 +1147,6 @@ int main(int argc, char **argv)
                 } else if (tap_y >= 276 && tap_y <= 332) {
                     only_locked = !only_locked;
                     list_scroll = list_target = 0.0f;
-                    audio_play(SFX_TOGGLE);
                     consumed = true;
                 }
             }
@@ -1193,19 +1190,16 @@ int main(int argc, char **argv)
                     if (kDown & HidNpadButton_Right) {
                         selected = (selected + 1) % view_count;
                         follow_selection = 1;
-                        audio_play(SFX_NAV);
                     }
                     if (kDown & HidNpadButton_Left) {
                         selected = (selected + view_count - 1) % view_count;
                         follow_selection = 1;
-                        audio_play(SFX_NAV);
                     }
                     if (kDown & HidNpadButton_Down) {
                         int next = selected + GRID_COLS;
                         if (next < view_count) {
                             selected = next;
                             follow_selection = 1;
-                            audio_play(SFX_NAV);
                         }
                     }
                     if (kDown & HidNpadButton_Up) {
@@ -1213,7 +1207,6 @@ int main(int argc, char **argv)
                         if (next >= 0) {
                             selected = next;
                             follow_selection = 1;
-                            audio_play(SFX_NAV);
                         }
                     }
                 }
@@ -1226,7 +1219,6 @@ int main(int argc, char **argv)
                     if (sx) {
                         selected = (selected + sx + view_count) % view_count;
                         follow_selection = 1;
-                        audio_play(SFX_NAV);
                     }
                     if (sy) {
                         int next = selected - sy * GRID_COLS;
@@ -1234,7 +1226,6 @@ int main(int argc, char **argv)
                         if (next >= 0 && next < view_count) {
                             selected = next;
                             follow_selection = 1;
-                            audio_play(SFX_NAV);
                         }
                     }
                 }
@@ -1313,7 +1304,6 @@ int main(int argc, char **argv)
                     playtime_minutes = game_playtime_minutes(game->title_id);
                     build_header_bg(game->title_id);
 
-                    audio_play(SFX_OK);
 
                     screen = 1;
                 }
@@ -1321,7 +1311,6 @@ int main(int argc, char **argv)
                 if (kDown & HidNpadButton_B) {
                     screen = 0;
                     ach_icons_clear();
-                    audio_play(SFX_BACK);
                 }
 
                 if (kDown & HidNpadButton_Down) list_target += ROW_H;
@@ -1693,19 +1682,6 @@ int main(int argc, char **argv)
             toast_frames--;
         }
 
-        audio_update();
-        {
-            int aid = -1, arc = 0, atot = 0;
-            audio_debug(&aid, &arc, &atot);
-
-            char dbg[80];
-            snprintf(dbg, sizeof(dbg), "sfx %d rc %d n %d", aid, arc, atot);
-
-            set_text_color(120, 200, 255);
-            draw_text(face_small, pixels, 8, 20, dbg);
-            reset_text_color();
-        }
-
         framebufferEnd(&fb);
 
         tick++;
@@ -1717,7 +1693,6 @@ int main(int argc, char **argv)
         shine_counter = (u32)(shine_counter + 30);
     }
 
-    audio_exit();
 
     if (net_ready) net_exit();
     ach_icons_clear();
