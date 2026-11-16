@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <math.h>
 
 #include "steam.h"
 #include "save.h"
@@ -31,27 +30,38 @@
 #define HEADER_H 150
 
 #define ACH_ICON_SIZE 44
-#define ROW_H 78
-#define LIST_Y0 250
-#define LIST_ROWS 5
+#define ROW_H 72
+#define SECTION_H 40
+#define LIST_TOP 316
+#define LIST_BOTTOM 700
 
 #define COLOR_BG      RGBA8_MAXALPHA(28, 30, 34)
-#define COLOR_PANEL   RGBA8_MAXALPHA(48, 51, 57)
-#define COLOR_PANEL2  RGBA8_MAXALPHA(40, 43, 48)
-#define COLOR_TRACK   RGBA8_MAXALPHA(62, 66, 73)
-#define COLOR_UNLOCK  RGBA8_MAXALPHA(52, 68, 55)
+#define COLOR_PANEL   RGBA8_MAXALPHA(44, 47, 52)
+#define COLOR_TRACK   RGBA8_MAXALPHA(60, 64, 70)
 #define COLOR_ACCENT  RGBA8_MAXALPHA(120, 200, 255)
+#define COLOR_LINE    RGBA8_MAXALPHA(48, 51, 57)
 
 static u32 fb_width;
 static int clip_left = 0;
 static int clip_right = W;
+static int clip_top = 0;
+static int clip_bottom = H;
 
 static u8 text_r = 255, text_g = 255, text_b = 255;
+
+static int measure_text(FT_Face face, const char *str);
 
 static void set_text_color(u8 r, u8 g, u8 b) { text_r = r; text_g = g; text_b = b; }
 static void reset_text_color(void) { set_text_color(255, 255, 255); }
 
 /* ------------------------------- рисование ------------------------------- */
+
+static void fill_bg(u32 *fb, u32 color)
+{
+    for (int j = 0; j < H; j++)
+        for (int i = 0; i < W; i++)
+            fb[(size_t)j * fb_width + i] = color;
+}
 
 static void rect(u32 *fb, int x, int y, int w, int h, u32 color)
 {
@@ -124,8 +134,8 @@ static int draw_codepoint(FT_Face face, u32 *fb, int x, int y, u32 c)
             int px = x + g->bitmap_left + i;
             int py = y - g->bitmap_top + j;
 
-            if (px < clip_left || px >= clip_right || py < 0 || py >= H)
-                continue;
+            if (px < clip_left || px >= clip_right) continue;
+            if (py < clip_top || py >= clip_bottom) continue;
 
             u8 a = b->buffer[j * b->pitch + i];
             if (!a) continue;
@@ -166,6 +176,11 @@ static void draw_text(FT_Face face, u32 *fb, int x, int y, const char *str)
     }
 }
 
+static void draw_text_right(FT_Face face, u32 *fb, int right, int y, const char *str)
+{
+    draw_text(face, fb, right - measure_text(face, str), y, str);
+}
+
 // Перелив светло-голубой -> белый.
 static void draw_text_shine(FT_Face face, u32 *fb, int x, int y,
                             const char *str, int phase)
@@ -178,10 +193,10 @@ static void draw_text_shine(FT_Face face, u32 *fb, int x, int y,
         if (n <= 0) break;
         p += n;
 
-        int wave = (phase + index * 30) % 600;
-        if (wave > 300) wave = 600 - wave;
+        int wave = (phase + index * 26) % 480;
+        if (wave > 240) wave = 480 - wave;
 
-        float k = (float)wave / 300.0f;
+        float k = (float)wave / 240.0f;
 
         set_text_color((u8)(150 + 105 * k),
                        (u8)(215 + 40 * k),
@@ -211,20 +226,30 @@ static int measure_text(FT_Face face, const char *str)
     return width;
 }
 
-static void draw_cover(u32 *fb, int x, int y, const u32 *cover,
+static void draw_cover(u32 *fb, int x, int y, int size, const u32 *cover,
                        u32 corner_color, int radius)
 {
-    for (int j = 0; j < COVER_SIZE; j++) {
+    for (int j = 0; j < size; j++) {
         int py = y + j;
         if (py < 0 || py >= H) continue;
-        if (x < 0 || x + COVER_SIZE > W) continue;
+        if (x < 0 || x + size > W) continue;
 
-        memcpy(fb + (size_t)py * fb_width + x,
-               cover + (size_t)j * COVER_SIZE,
-               COVER_SIZE * sizeof(u32));
+        if (size == COVER_SIZE) {
+            memcpy(fb + (size_t)py * fb_width + x,
+                   cover + (size_t)j * COVER_SIZE,
+                   COVER_SIZE * sizeof(u32));
+        } else {
+            int sy = j * COVER_SIZE / size;
+
+            for (int i = 0; i < size; i++) {
+                int sx = i * COVER_SIZE / size;
+                fb[(size_t)py * fb_width + x + i] =
+                    cover[(size_t)sy * COVER_SIZE + sx];
+            }
+        }
     }
 
-    round_corners(fb, x, y, COVER_SIZE, COVER_SIZE, radius, corner_color);
+    round_corners(fb, x, y, size, size, radius, corner_color);
 }
 
 static void draw_scrollbar(u32 *fb, int x, int y, int h, int content, int view, int scroll)
@@ -240,6 +265,16 @@ static void draw_scrollbar(u32 *fb, int x, int y, int h, int content, int view, 
     int pos = max_scroll > 0 ? (h - thumb_h) * scroll / max_scroll : 0;
 
     round_rect(fb, x, y + pos, 6, thumb_h, 3, RGBA8_MAXALPHA(150, 155, 165));
+}
+
+static void draw_toggle(u32 *fb, int x, int y, bool on)
+{
+    round_rect(fb, x, y, 62, 32, 16, on ? COLOR_ACCENT : COLOR_TRACK);
+
+    int knob = 24;
+    int kx = on ? x + 62 - knob - 4 : x + 4;
+
+    round_rect(fb, kx, y + 4, knob, knob, knob / 2, RGBA8_MAXALPHA(245, 248, 252));
 }
 
 /* --------------------------- иконки достижений --------------------------- */
@@ -351,9 +386,9 @@ static void draw_achievement_icon(u32 *fb, int x, int y,
             u8 blue = (color >> 16) & 0xFF;
 
             if (dim) {
-                red = (u8)(red * 40 / 100);
-                green = (u8)(green * 40 / 100);
-                blue = (u8)(blue * 40 / 100);
+                red = (u8)(red * 38 / 100);
+                green = (u8)(green * 38 / 100);
+                blue = (u8)(blue * 38 / 100);
             }
 
             fb[(size_t)py * fb_width + px] = RGBA8_MAXALPHA(red, green, blue);
@@ -499,7 +534,7 @@ static bool ask_search(char *out, size_t size)
         return false;
 
     swkbdConfigMakePresetDefault(&kbd);
-    swkbdConfigSetGuideText(&kbd, "Search game");
+    swkbdConfigSetGuideText(&kbd, "Поиск игры");
 
     char buffer[64] = {0};
     Result rc = swkbdShow(&kbd, buffer, sizeof(buffer));
@@ -513,60 +548,84 @@ static bool ask_search(char *out, size_t size)
     return true;
 }
 
-/* ------------------------------- отрисовка ------------------------------- */
+/* ------------------------------ список строк ------------------------------ */
 
 typedef struct {
-    bool touching;
-    int start_x, start_y;
-    int last_x, last_y;
-    bool dragged;
-} TouchState;
+    int kind;          // 0 = заголовок секции, 1 = достижение
+    int ach;           // индекс достижения (или счётчик для заголовка)
+    const char *label;
+    int y;
+    int height;
+} ListRow;
 
-static void draw_back_button(FT_Face face, u32 *fb, int x, int y)
+static ListRow list_rows[MAX_ACHIEVEMENTS * 2 + 8];
+static int list_row_count = 0;
+static int list_total_height = 0;
+static int list_unlocked = 0;
+static int list_locked = 0;
+
+static void build_list(const char *appid, const SteamAchievement *achievements,
+                       int count, const u8 *flags, int flag_count,
+                       bool only_locked)
 {
-    round_rect(fb, x, y, 52, 52, 16, COLOR_PANEL);
-    // стрелка "<"
-    rect(fb, x + 30, y + 16, 4, 20, RGBA8_MAXALPHA(220, 225, 235));
-    for (int i = 0; i < 10; i++) {
-        rect(fb, x + 30 - i, y + 16 + i, 4, 1, RGBA8_MAXALPHA(220, 225, 235));
-        rect(fb, x + 30 - i, y + 35 - i, 4, 1, RGBA8_MAXALPHA(220, 225, 235));
-    }
-}
+    list_row_count = 0;
+    list_unlocked = 0;
+    list_locked = 0;
 
-static void draw_guide(FT_Face face, FT_Face face_small, u32 *fb)
-{
-    const int w = 540, h = 360;
-    const int x = (W - w) / 2, y = (H - h) / 2;
-
-    round_rect(fb, x, y, w, h, 24, RGBA8_MAXALPHA(42, 45, 51));
-    round_rect(fb, x, y, w, 64, 24, RGBA8_MAXALPHA(56, 60, 68));
-    rect(fb, x, y + 44, w, 20, RGBA8_MAXALPHA(56, 60, 68));
-
-    draw_text(face, fb, x + 30, y + 44, "Guide");
-    draw_text_shine(face, fb, x + w - 30 - measure_text(face, "!"), y + 44, "!", 0);
-
-    const char *lines[] = {
-        "D-Pad / Stick   - select",
-        "Touch           - scroll / tap",
-        "A               - open game",
-        "B               - back",
-        "Y               - search",
-        "-               - guide",
-        "+               - exit",
-    };
-
-    int text_y = y + 112;
-
-    for (unsigned i = 0; i < sizeof(lines) / sizeof(lines[0]); i++) {
-        set_text_color(205, 210, 220);
-        draw_text(face_small, fb, x + 36, text_y, lines[i]);
-        reset_text_color();
-        text_y += 32;
+    for (int i = 0; i < count; i++) {
+        if (achievement_unlocked(appid, i, &achievements[i], flags, flag_count))
+            list_unlocked++;
+        else
+            list_locked++;
     }
 
-    set_text_color(130, 135, 145);
-    draw_text(face_small, fb, x + 36, y + h - 22, "Tap outside to close");
-    reset_text_color();
+    int y = 0;
+
+    if (list_unlocked > 0 && !only_locked) {
+        ListRow *row = &list_rows[list_row_count++];
+        row->kind = 0;
+        row->label = "ПОЛУЧЕННЫЕ ДОСТИЖЕНИЯ";
+        row->ach = list_unlocked;
+        row->y = y;
+        row->height = SECTION_H;
+        y += SECTION_H;
+
+        for (int i = 0; i < count; i++) {
+            if (!achievement_unlocked(appid, i, &achievements[i], flags, flag_count))
+                continue;
+
+            row = &list_rows[list_row_count++];
+            row->kind = 1;
+            row->ach = i;
+            row->y = y;
+            row->height = ROW_H;
+            y += ROW_H;
+        }
+    }
+
+    if (list_locked > 0) {
+        ListRow *row = &list_rows[list_row_count++];
+        row->kind = 0;
+        row->label = "НЕПОЛУЧЕННЫЕ ДОСТИЖЕНИЯ";
+        row->ach = list_locked;
+        row->y = y;
+        row->height = SECTION_H;
+        y += SECTION_H;
+
+        for (int i = 0; i < count; i++) {
+            if (achievement_unlocked(appid, i, &achievements[i], flags, flag_count))
+                continue;
+
+            row = &list_rows[list_row_count++];
+            row->kind = 1;
+            row->ach = i;
+            row->y = y;
+            row->height = ROW_H;
+            y += ROW_H;
+        }
+    }
+
+    list_total_height = y;
 }
 
 /* --------------------------------- main --------------------------------- */
@@ -620,16 +679,12 @@ int main(int argc, char **argv)
     bool net_ready = net_init();
     history_load();
 
-    // диагностика структуры сейва коллекции
-    gamesave_dump_tree(0x0100D0E00E51E000ULL);
-
     int view[MAX_GAMES];
     int view_count = 0;
 
     SteamAchievement achievements[MAX_ACHIEVEMENTS] = {0};
     int achievement_count = 0;
     int unlocked_count = 0;
-    int order[MAX_ACHIEVEMENTS];
 
     u8 flags[MAX_ACHIEVEMENTS] = {0};
     int flag_count = 0;
@@ -641,6 +696,7 @@ int main(int argc, char **argv)
     int selected = 0;
     int screen = 0;
     int guide_open = 0;
+    int only_locked = 0;
 
     float grid_scroll = 0.0f, grid_target = 0.0f;
     float list_scroll = 0.0f, list_target = 0.0f;
@@ -648,8 +704,15 @@ int main(int argc, char **argv)
     u32 shine_counter = 0;
     int marquee_counter = 0;
 
-    TouchState touch = {0};
+    bool touch_down = false;
+    int touch_start_x = 0, touch_start_y = 0;
+    int touch_last_x = 0, touch_last_y = 0;
+    bool touch_dragged = false;
+    bool touch_tapped = false;
+    int tap_x = 0, tap_y = 0;
+
     bool stick_latch = false;
+    int hold_frames = 0;
 
     for (int i = 0; i < game_count; i++)
         view[view_count++] = i;
@@ -657,36 +720,33 @@ int main(int argc, char **argv)
     while (appletMainLoop()) {
         padUpdate(&pad);
         u32 kDown = padGetButtonsDown(&pad);
+        u32 held = padGetButtons(&pad);
 
         if (kDown & HidNpadButton_Plus) break;
 
-        /* ---------- тач ---------- */
+        /* ------------------------------- тач ------------------------------- */
         HidTouchScreenState touch_state = {0};
-        int touch_x = 0, touch_y = 0;
-        bool tap = false;
+        touch_tapped = false;
 
         if (hidGetTouchScreenStates(&touch_state, 1) > 0 &&
             touch_state.count > 0) {
-            touch_x = (int)touch_state.touches[0].x;
-            touch_y = (int)touch_state.touches[0].y;
+            int tx = (int)touch_state.touches[0].x;
+            int ty = (int)touch_state.touches[0].y;
 
-            if (!touch.touching) {
-                touch.touching = true;
-                touch.dragged = false;
-                touch.start_x = touch_x;
-                touch.start_y = touch_y;
+            if (!touch_down) {
+                touch_down = true;
+                touch_dragged = false;
+                touch_start_x = tx;
+                touch_start_y = ty;
             } else {
-                int dx = touch_x - touch.last_x;
-                int dy = touch_y - touch.last_y;
+                int dy = ty - touch_last_y;
 
-                if (abs(touch_x - touch.start_x) > 12 ||
-                    abs(touch_y - touch.start_y) > 12)
-                    touch.dragged = true;
+                if (abs(tx - touch_start_x) > 10 ||
+                    abs(ty - touch_start_y) > 10)
+                    touch_dragged = true;
 
-                if (touch.dragged) {
-                    if (guide_open) {
-                        /* окно не скроллим */
-                    } else if (screen == 0) {
+                if (touch_dragged && !guide_open) {
+                    if (screen == 0) {
                         grid_scroll -= (float)dy;
                         grid_target = grid_scroll;
                     } else {
@@ -694,82 +754,90 @@ int main(int argc, char **argv)
                         list_target = list_scroll;
                     }
                 }
-
-                (void)dx;
             }
 
-            touch.last_x = touch_x;
-            touch.last_y = touch_y;
-        } else if (touch.touching) {
-            touch.touching = false;
-            tap = !touch.dragged;
-            touch.dragged = false;
+            touch_last_x = tx;
+            touch_last_y = ty;
+        } else if (touch_down) {
+            touch_down = false;
+
+            if (!touch_dragged) {
+                touch_tapped = true;
+                tap_x = touch_last_x;
+                tap_y = touch_last_y;
+            }
+
+            touch_dragged = false;
         }
 
-        /* ---------- кнопки ---------- */
+        /* ----------------------------- кнопки ----------------------------- */
         if (kDown & HidNpadButton_Minus)
             guide_open = !guide_open;
         else if (guide_open && (kDown & HidNpadButton_B))
             guide_open = 0;
 
-        /* ---------- обработка нажатий ---------- */
-        bool handled = false;
+        bool consumed = false;
 
-        if (tap) {
-            // кнопка Guide
-            if (touch_x >= 52 && touch_x <= 118 &&
-                touch_y >= H - 92 && touch_y <= H - 26) {
+        /* ------------------------------- тапы ------------------------------- */
+        if (touch_tapped) {
+            bool in_bang = (tap_x >= 45 && tap_x <= 115 &&
+                            tap_y >= H - 95 && tap_y <= H - 25);
+
+            if (in_bang) {
                 guide_open = !guide_open;
-                handled = true;
+                consumed = true;
             } else if (guide_open) {
                 guide_open = 0;
-                handled = true;
+                consumed = true;
+            } else if (screen == 0) {
+                if (tap_y >= 86 && tap_y <= 138) {
+                    char query[64];
+                    snprintf(query, sizeof(query), "%s", search);
+
+                    if (ask_search(query, sizeof(query))) {
+                        snprintf(search, sizeof(search), "%s", query);
+
+                        view_count = 0;
+                        selected = 0;
+                        grid_scroll = grid_target = 0.0f;
+
+                        for (int i = 0; i < game_count; i++)
+                            if (text_contains(games[i].name, search))
+                                view[view_count++] = i;
+                    }
+
+                    consumed = true;
+                } else if (tap_y >= GRID_Y0) {
+                    int col = (tap_x - GRID_X0) / GRID_STEP_X;
+                    int row = (int)(((float)tap_y + grid_scroll - GRID_Y0) /
+                                    (float)GRID_STEP_Y);
+
+                    if (col >= 0 && col < GRID_COLS && row >= 0) {
+                        int x0 = GRID_X0 + col * GRID_STEP_X;
+                        int position = row * GRID_COLS + col;
+
+                        if (tap_x >= x0 && tap_x <= x0 + COVER_SIZE &&
+                            position < view_count) {
+                            selected = position;
+                            kDown |= HidNpadButton_A;
+                        }
+                    }
+                }
+            } else {
+                if (tap_x >= 45 && tap_x <= 115 && tap_y >= 20 && tap_y <= 90) {
+                    screen = 0;
+                    ach_icons_clear();
+                    consumed = true;
+                } else if (tap_y >= 250 && tap_y <= 306) {
+                    only_locked = !only_locked;
+                    list_scroll = list_target = 0.0f;
+                    consumed = true;
+                }
             }
         }
 
-        if (!handled && !guide_open) {
-            if (tap) {
-                if (screen == 0) {
-                    // поиск
-                    if (touch_y >= 86 && touch_y <= 138) {
-                        char query[64];
-                        snprintf(query, sizeof(query), "%s", search);
-
-                        if (ask_search(query, sizeof(query))) {
-                            snprintf(search, sizeof(search), "%s", query);
-
-                            view_count = 0;
-                            selected = 0;
-                            grid_scroll = grid_target = 0.0f;
-
-                            for (int i = 0; i < game_count; i++)
-                                if (text_contains(games[i].name, search))
-                                    view[view_count++] = i;
-                        }
-                    } else if (touch_y >= GRID_Y0) {
-                        int row = (int)((touch_y + grid_scroll - GRID_Y0) / GRID_STEP_Y);
-                        int col = (touch_x - GRID_X0) / GRID_STEP_X;
-
-                        if (col >= 0 && col < GRID_COLS && row >= 0) {
-                            int x0 = GRID_X0 + col * GRID_STEP_X;
-                            int position = row * GRID_COLS + col;
-
-                            if (touch_x >= x0 && touch_x <= x0 + COVER_SIZE &&
-                                position < view_count) {
-                                selected = position;
-                                kDown |= HidNpadButton_A;
-                            }
-                        }
-                    }
-                } else {
-                    if (touch_x >= 52 && touch_x <= 118 &&
-                        touch_y >= 30 && touch_y <= 96) {
-                        screen = 0;
-                        ach_icons_clear();
-                    }
-                }
-            }
-
+        /* ----------------------------- навигация ----------------------------- */
+        if (!guide_open && !consumed) {
             if (screen == 0) {
                 if (view_count > 0) {
                     if (kDown & HidNpadButton_Right)
@@ -806,11 +874,10 @@ int main(int argc, char **argv)
                     achievement_count = 0;
                     unlocked_count = 0;
                     flag_count = 0;
+                    only_locked = 0;
                     list_scroll = list_target = 0.0f;
 
-                    if (!game->steam_appid[0]) {
-                        achievement_count = 0;
-                    } else {
+                    if (game->steam_appid[0]) {
                         if (net_ready) {
                             char *response = malloc(262144);
 
@@ -866,22 +933,6 @@ int main(int argc, char **argv)
                         }
                     }
 
-                    {
-                        int n = 0;
-
-                        for (int i = 0; i < achievement_count; i++)
-                            if (achievement_unlocked(game->steam_appid, i,
-                                                     &achievements[i],
-                                                     flags, flag_count))
-                                order[n++] = i;
-
-                        for (int i = 0; i < achievement_count; i++)
-                            if (!achievement_unlocked(game->steam_appid, i,
-                                                      &achievements[i],
-                                                      flags, flag_count))
-                                order[n++] = i;
-                    }
-
                     ach_icons_load(game->steam_appid, achievement_count, achievements);
                     playtime_minutes = game_playtime_minutes(game->title_id);
 
@@ -892,14 +943,43 @@ int main(int argc, char **argv)
                     screen = 0;
                     ach_icons_clear();
                 }
-                if (kDown & HidNpadButton_Down)
-                    list_target += ROW_H;
-                if (kDown & HidNpadButton_Up)
-                    list_target -= ROW_H;
+
+                if (kDown & HidNpadButton_Down) list_target += ROW_H;
+                if (kDown & HidNpadButton_Up) list_target -= ROW_H;
+
+                HidAnalogStickState stick = padGetStickPos(&pad, 1);
+
+                if (stick.y > 16000 || stick.y < -16000) {
+                    if (!stick_latch) {
+                        stick_latch = true;
+                        list_target += stick.y > 0 ? ROW_H : -ROW_H;
+                    }
+                } else {
+                    stick_latch = false;
+                }
+            }
+
+            if (held & (HidNpadButton_Down | HidNpadButton_Up)) {
+                hold_frames++;
+
+                if (hold_frames > 90 && (hold_frames % 4) == 0) {
+                    int step = (held & HidNpadButton_Down) ? 1 : -1;
+
+                    if (screen == 0 && view_count > 0) {
+                        int next = selected + step * GRID_COLS;
+
+                        if (next >= 0 && next < view_count)
+                            selected = next;
+                    } else if (screen == 1) {
+                        list_target += step * ROW_H;
+                    }
+                }
+            } else {
+                hold_frames = 0;
             }
         }
 
-        /* ---------- ограничение прокрутки ---------- */
+        /* --------------------------- ограничение скролла --------------------------- */
         {
             int rows = (view_count + GRID_COLS - 1) / GRID_COLS;
             float content = (float)rows * GRID_STEP_Y;
@@ -908,8 +988,7 @@ int main(int argc, char **argv)
 
             if (max_scroll < 0) max_scroll = 0;
 
-            // держим выбранную плитку в кадре
-            if (!touch.dragged) {
+            if (!touch_dragged) {
                 int row = selected / GRID_COLS;
                 float top = (float)row * GRID_STEP_Y;
 
@@ -923,32 +1002,35 @@ int main(int argc, char **argv)
             if (grid_scroll < 0) grid_scroll = 0;
             if (grid_scroll > max_scroll) grid_scroll = max_scroll;
 
-            if (!touch.dragged)
-                grid_scroll += (grid_target - grid_scroll) * 0.25f;
-
-            float list_content = (float)achievement_count * ROW_H;
-            float list_visible = (float)(LIST_ROWS * ROW_H);
-            float list_max = list_content - list_visible;
-
-            if (list_max < 0) list_max = 0;
-            if (list_target < 0) list_target = 0;
-            if (list_target > list_max) list_target = list_max;
-            if (list_scroll < 0) list_scroll = 0;
-            if (list_scroll > list_max) list_scroll = list_max;
-
-            if (!touch.dragged)
-                list_scroll += (list_target - list_scroll) * 0.3f;
+            if (!touch_dragged)
+                grid_scroll += (grid_target - grid_scroll) * 0.35f;
         }
 
-        /* ---------- отрисовка ---------- */
+        {
+            float view = (float)(LIST_BOTTOM - LIST_TOP);
+            float max_scroll = (float)list_total_height - view;
+
+            if (max_scroll < 0) max_scroll = 0;
+
+            if (list_target < 0) list_target = 0;
+            if (list_target > max_scroll) list_target = max_scroll;
+            if (list_scroll < 0) list_scroll = 0;
+            if (list_scroll > max_scroll) list_scroll = max_scroll;
+
+            if (!touch_dragged)
+                list_scroll += (list_target - list_scroll) * 0.35f;
+        }
+
+        /* ------------------------------ отрисовка ------------------------------ */
         u32 stride;
         u32 *pixels = (u32 *)framebufferBegin(&fb, &stride);
         fb_width = stride / sizeof(u32);
 
-        rect(pixels, 0, 0, W, H, COLOR_BG);
+        fill_bg(pixels, COLOR_BG);
+        clip_top = 0;
+        clip_bottom = H;
 
         if (screen == 0) {
-            // грид
             for (int i = 0; i < view_count; i++) {
                 int col = i % GRID_COLS;
                 int row = i / GRID_COLS;
@@ -962,17 +1044,15 @@ int main(int argc, char **argv)
                 int game_index = view[i];
                 const u32 *cover = library_cover(games[game_index].title_id);
 
-                if (i == selected) {
-                    round_rect(pixels, x - 6, y - 6, COVER_SIZE + 12,
-                               COVER_SIZE + 12, 24, COLOR_ACCENT);
-                }
+                if (i == selected && cover)
+                    round_rect(pixels, x - 7, y - 7, COVER_SIZE + 14,
+                               COVER_SIZE + 14, 24, COLOR_ACCENT);
 
                 if (cover)
-                    draw_cover(pixels, x, y, cover,
+                    draw_cover(pixels, x, y, COVER_SIZE, cover,
                                i == selected ? COLOR_ACCENT : COLOR_BG, 18);
                 else
-                    round_rect(pixels, x, y, COVER_SIZE, COVER_SIZE, 18,
-                               COLOR_PANEL);
+                    round_rect(pixels, x, y, COVER_SIZE, COVER_SIZE, 18, COLOR_PANEL);
 
                 clip_left = x;
                 clip_right = x + COVER_SIZE;
@@ -1000,9 +1080,9 @@ int main(int argc, char **argv)
                 clip_right = W;
             }
 
-            // шапка
             rect(pixels, 0, 0, W, HEADER_H, COLOR_BG);
-            draw_text_shine(face, pixels, 55, 58, "NX-Stach", shine_counter);
+
+            draw_text_shine(face, pixels, 55, 58, "NX-Stach", (int)shine_counter);
 
             round_rect(pixels, 55, 86, 1170, 52, 14, COLOR_PANEL);
 
@@ -1011,7 +1091,7 @@ int main(int argc, char **argv)
                 draw_text(face_small, pixels, 78, 120, search);
             } else {
                 set_text_color(120, 125, 135);
-                draw_text(face_small, pixels, 78, 120, "Search...");
+                draw_text(face_small, pixels, 78, 120, "Поиск...");
             }
             reset_text_color();
 
@@ -1019,135 +1099,210 @@ int main(int argc, char **argv)
             draw_text(face_small, pixels, W - 130, 120, "Y");
             reset_text_color();
 
-            const int visible_rows = 2;
+            if (view_count == 0) {
+                set_text_color(150, 155, 165);
+                draw_text(face, pixels, 55, 340, "Ничего не найдено");
+                reset_text_color();
+            }
+
             int rows = (view_count + GRID_COLS - 1) / GRID_COLS;
             draw_scrollbar(pixels, W - 24, GRID_Y0, H - GRID_Y0 - 80,
-                           rows * GRID_STEP_Y, visible_rows * GRID_STEP_Y,
+                           rows * GRID_STEP_Y, 2 * GRID_STEP_Y,
                            (int)grid_scroll);
         } else if (view_count > 0) {
             const Game *game = &games[view[selected]];
 
-            // список
-            int first = (int)(list_scroll / ROW_H);
+            build_list(game->steam_appid, achievements, achievement_count,
+                       flags, flag_count, only_locked != 0);
 
-            for (int i = first; i < achievement_count && i < first + LIST_ROWS + 2; i++) {
-                int index = order[i];
+            clip_top = LIST_TOP;
+            clip_bottom = LIST_BOTTOM;
+
+            int offset = (int)list_scroll;
+
+            for (int i = 0; i < list_row_count; i++) {
+                ListRow *row = &list_rows[i];
+
+                int y = LIST_TOP + row->y - offset;
+
+                if (y + row->height < LIST_TOP) continue;
+                if (y > LIST_BOTTOM) break;
+
+                if (row->kind == 0) {
+                    char header[96];
+                    snprintf(header, sizeof(header), "%s (%d)",
+                             row->label, row->ach);
+                    set_text_color(150, 155, 165);
+                    draw_text(face_small, pixels, 55, y + 26, header);
+                    reset_text_color();
+                    continue;
+                }
+
+                int index = row->ach;
                 bool unlocked = achievement_unlocked(game->steam_appid, index,
                                                      &achievements[index],
                                                      flags, flag_count);
 
-                int y = LIST_Y0 + i * ROW_H - (int)list_scroll;
-
-                if (y + ROW_H < 200) continue;
-
-                round_rect(pixels, 55, y, 1130, ROW_H - 10, 14,
-                           unlocked ? COLOR_UNLOCK : COLOR_PANEL2);
-
                 if (ach_icons[index])
-                    draw_achievement_icon(pixels, 70, y + 12, ach_icons[index], !unlocked);
+                    draw_achievement_icon(pixels, 55, y + 6, ach_icons[index], !unlocked);
                 else
-                    round_rect(pixels, 70, y + 12, ACH_ICON_SIZE, ACH_ICON_SIZE, 8,
+                    round_rect(pixels, 55, y + 6, ACH_ICON_SIZE, ACH_ICON_SIZE, 8,
                                RGBA8_MAXALPHA(32, 34, 38));
 
-                if (unlocked) set_text_color(200, 245, 205);
-                else set_text_color(195, 200, 210);
+                if (unlocked) set_text_color(210, 245, 215);
+                else set_text_color(180, 185, 195);
 
-                clip_left = 128;
-                clip_right = 980;
-                draw_text(face_small, pixels, 128, y + 28, achievements[index].name);
+                clip_left = 120;
+                clip_right = 1010;
+                draw_text(face_small, pixels, 120, y + 26, achievements[index].name);
                 clip_left = 0;
                 clip_right = W;
 
-                set_text_color(140, 145, 155);
-                clip_left = 128;
-                clip_right = 980;
-                draw_text(face_small, pixels, 128, y + 52, achievements[index].description);
+                set_text_color(130, 135, 145);
+                clip_left = 120;
+                clip_right = 1010;
+                draw_text(face_small, pixels, 120, y + 50, achievements[index].description);
                 clip_left = 0;
                 clip_right = W;
                 reset_text_color();
 
                 if (unlocked) {
-                    char date[32];
+                    char date[40];
+                    char line[64];
+
                     format_date(history_get(game->steam_appid, achievements[index].id),
                                 date, sizeof(date));
 
                     if (date[0]) {
-                        set_text_color(150, 200, 160);
-                        int date_width = measure_text(face_small, date);
-                        draw_text(face_small, pixels, 1165 - date_width, y + 40, date);
+                        snprintf(line, sizeof(line), "Получено %s", date);
+                        set_text_color(130, 170, 140);
+                        draw_text_right(face_small, pixels, 1195, y + 40, line);
                         reset_text_color();
                     }
                 }
+
+                rect(pixels, 55, y + row->height - 1, 1140, 1, COLOR_LINE);
             }
 
-            draw_scrollbar(pixels, W - 24, LIST_Y0, LIST_ROWS * ROW_H,
-                           achievement_count * ROW_H, LIST_ROWS * ROW_H,
+            clip_top = 0;
+            clip_bottom = H;
+
+            draw_scrollbar(pixels, W - 24, LIST_TOP, LIST_BOTTOM - LIST_TOP,
+                           list_total_height, LIST_BOTTOM - LIST_TOP,
                            (int)list_scroll);
 
-            // шапка
-            rect(pixels, 0, 0, W, 210, COLOR_BG);
+            rect(pixels, 0, 0, W, LIST_TOP - 6, COLOR_BG);
 
-            draw_back_button(face, pixels, 55, 34);
-            draw_text(face, pixels, 128, 68, game->name);
-
-            char stats[128];
-            snprintf(stats, sizeof(stats), "Achievements: %d / %d",
-                     unlocked_count, achievement_count);
-
-            set_text_color(190, 195, 205);
-            draw_text(face_small, pixels, 128, 100, stats);
-
-            if (playtime_minutes > 0) {
-                char playtime[64];
-                snprintf(playtime, sizeof(playtime), "Time in game: %u h %u m",
-                         playtime_minutes / 60, playtime_minutes % 60);
-                draw_text(face_small, pixels, 128, 126, playtime);
-            }
+            round_rect(pixels, 55, 26, 52, 52, 16, COLOR_PANEL);
+            set_text_color(220, 226, 236);
+            draw_text(face, pixels, 72, 64, "‹");
             reset_text_color();
 
-            int bar_w = 960;
-            int filled = achievement_count > 0
-                ? bar_w * unlocked_count / achievement_count : 0;
-
-            round_rect(pixels, 55, 152, bar_w, 18, 9, COLOR_TRACK);
-            if (filled > 0)
-                round_rect(pixels, 55, 152, filled, 18, 9, COLOR_ACCENT);
-
-            // обложка
             const u32 *cover = library_cover(game->title_id);
             if (cover)
-                draw_cover(pixels, W - 55 - COVER_SIZE, 30, cover, COLOR_BG, 18);
+                draw_cover(pixels, 125, 20, 120, cover, COLOR_BG, 16);
             else
-                round_rect(pixels, W - 55 - COVER_SIZE, 30, COVER_SIZE,
-                           COVER_SIZE, 18, COLOR_PANEL);
+                round_rect(pixels, 125, 20, 120, 120, 16, COLOR_PANEL);
 
-            set_text_color(150, 155, 165);
-            draw_text(face_small, pixels, 55, 200, "ACHIEVEMENTS");
+            clip_left = 270;
+            clip_right = W - 40;
+            draw_text(face, pixels, 270, 60, game->name);
+            clip_left = 0;
+            clip_right = W;
+
+            char stats[192];
+
+            if (playtime_minutes > 0)
+                snprintf(stats, sizeof(stats),
+                         "Достижения: %d / %d   |   Время в игре: %u ч %u м",
+                         unlocked_count, achievement_count,
+                         playtime_minutes / 60, playtime_minutes % 60);
+            else
+                snprintf(stats, sizeof(stats), "Достижения: %d / %d",
+                         unlocked_count, achievement_count);
+
+            set_text_color(160, 165, 175);
+            draw_text(face_small, pixels, 270, 92, stats);
             reset_text_color();
+
+            round_rect(pixels, 55, 152, 1170, 76, 16, COLOR_PANEL);
+
+            int percent = achievement_count > 0
+                ? unlocked_count * 100 / achievement_count : 0;
+
+            char progress[96];
+            snprintf(progress, sizeof(progress),
+                     "Получено достижений: %d/%d (%d%%)",
+                     unlocked_count, achievement_count, percent);
+
+            set_text_color(220, 224, 232);
+            draw_text(face_small, pixels, 85, 182, progress);
+            reset_text_color();
+
+            int bar_w = 1110;
+            int filled = bar_w * percent / 100;
+
+            round_rect(pixels, 85, 196, bar_w, 12, 6, COLOR_TRACK);
+            if (filled > 0)
+                round_rect(pixels, 85, 196, filled, 12, 6, COLOR_ACCENT);
+
+            set_text_color(190, 195, 205);
+            draw_text(face_small, pixels, 55, 280, "Только невыполненные");
+            reset_text_color();
+
+            draw_toggle(pixels, 1140, 252, only_locked != 0);
         }
 
-        // кнопка Guide поверх всего
+        // кнопка Guide
         {
-            const int size = 52;
-            const int bx = 55;
-            const int by = H - 85;
+            const int bx = 55, by = H - 85, size = 52;
 
             round_rect(pixels, bx, by, size, size, size / 2, COLOR_PANEL);
 
-            int glyph_w = measure_text(face, "!");
+            int glyph = measure_text(face, "!");
             set_text_color(235, 240, 250);
-            draw_text(face, pixels, bx + (size * 2 / 3) - glyph_w / 2,
-                      by + size / 2 + 10, "!");
+            draw_text(face, pixels, bx + size / 2 - glyph / 2, by + size / 2 + 10, "!");
             reset_text_color();
         }
 
-        if (guide_open)
-            draw_guide(face, face_small, pixels);
+        if (guide_open) {
+            const int w = 560, h = 400;
+            const int x = (W - w) / 2, y = (H - h) / 2;
+
+            round_rect(pixels, x, y, w, h, 24, RGBA8_MAXALPHA(42, 45, 51));
+            round_rect(pixels, x, y, w, 64, 24, RGBA8_MAXALPHA(56, 60, 68));
+            rect(pixels, x, y + 44, w, 20, RGBA8_MAXALPHA(56, 60, 68));
+
+            draw_text(face, pixels, x + 30, y + 44, "Guide");
+
+            const char *lines[] = {
+                "Крестовина / стик   - выбор",
+                "Тач                 - прокрутка / нажатие",
+                "A                   - открыть игру",
+                "B                   - назад",
+                "Y                   - поиск",
+                "-                   - этот гайд",
+                "+                   - выход",
+            };
+
+            int text_y = y + 116;
+
+            for (unsigned i = 0; i < sizeof(lines) / sizeof(lines[0]); i++) {
+                set_text_color(205, 210, 220);
+                draw_text(face_small, pixels, x + 36, text_y, lines[i]);
+                reset_text_color();
+                text_y += 34;
+            }
+
+            set_text_color(130, 135, 145);
+            draw_text(face_small, pixels, x + 36, y + h - 24, "Тап вне окна - закрыть");
+            reset_text_color();
+        }
 
         framebufferEnd(&fb);
 
-        shine_counter = (u32)(shine_counter + 22);
-        marquee_counter = (marquee_counter + 2) % 100000;
+        shine_counter = (u32)(shine_counter + 30);
+        marquee_counter = (marquee_counter + 3) % 100000;
     }
 
     if (net_ready) net_exit();

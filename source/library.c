@@ -10,7 +10,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#define CACHE_SLOTS 8
+#define CACHE_SLOTS 24
 #define TITLE_ID_MASK 0xFFFFFFFFFFFFF000ULL
 #define GAMES_JSON "sdmc:/switch/NX-Stach/games.json"
 
