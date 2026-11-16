@@ -31,6 +31,12 @@ static AudioOutBuffer ring[RING_BUFS];
 static s16 *ring_data[RING_BUFS];
 static int ring_next = 0;
 
+static u64 audio_start_tick = 0;
+static u64 audio_produced_ns = 0;
+
+#define BUF_NS ((u64)FRAMES_PER_BUF * 1000000000ULL / SAMPLE_RATE)
+#define LEAD_NS 45000000ULL
+
 /* ----------------------------- генерация звуков ----------------------------- */
 
 static void add_glass(s16 *dst, int *frame, int frames, float freq, float amp,
@@ -170,13 +176,18 @@ bool audio_init(void)
     }
 
     ring_next = 0;
+    audio_produced_ns = 0;
+    audio_start_tick = armGetSystemTick();
+
     ready = true;
 
-    // сразу наполняем очередь тишиной, чтобы поток не начинался с провала
-    for (int i = 0; i < TARGET_QUEUE; i++)
-        audoutAppendAudioOutBuffer(&ring[i]);
-
-    ring_next = TARGET_QUEUE % RING_BUFS;
+    // наполняем очередь тишиной
+    for (int i = 0; i < TARGET_QUEUE; i++) {
+        if (R_SUCCEEDED(audoutAppendAudioOutBuffer(&ring[i]))) {
+            ring_next = (ring_next + 1) % RING_BUFS;
+            audio_produced_ns += BUF_NS;
+        }
+    }
 
     return true;
 }
@@ -215,45 +226,55 @@ void audio_play(SfxId id)
     }
 }
 
+static bool append_one(void)
+{
+    s16 *dst = ring_data[ring_next];
+    int avail = acc_available();
+
+    for (int i = 0; i < FRAMES_PER_BUF; i++) {
+        if (avail > 0) {
+            dst[i * CHANNELS + 0] = acc[acc_read * CHANNELS + 0];
+            dst[i * CHANNELS + 1] = acc[acc_read * CHANNELS + 1];
+
+            acc[acc_read * CHANNELS + 0] = 0;
+            acc[acc_read * CHANNELS + 1] = 0;
+
+            acc_read = (acc_read + 1) % ACC_FRAMES;
+            avail--;
+        } else {
+            dst[i * CHANNELS + 0] = 0;
+            dst[i * CHANNELS + 1] = 0;
+        }
+    }
+
+    ring[ring_next].data_size = (u32)(FRAMES_PER_BUF * CHANNELS * sizeof(s16));
+    ring[ring_next].data_offset = 0;
+
+    if (R_FAILED(audoutAppendAudioOutBuffer(&ring[ring_next])))
+        return false;
+
+    ring_next = (ring_next + 1) % RING_BUFS;
+    return true;
+}
+
 void audio_update(void)
 {
     if (!ready)
         return;
 
-    u32 queued = 0;
+    u64 now = armGetSystemTick();
+    u64 elapsed = armTicksToNs(now - audio_start_tick);
 
-    if (R_FAILED(audoutGetAudioOutBufferCount(&queued)))
-        queued = 0;
+    // если поток долго не кормили (заставка, тяжёлый кадр) — синхронизируемся
+    if (elapsed > audio_produced_ns + 400000000ULL)
+        audio_produced_ns = elapsed;
 
     int guard = 0;
 
-    while (queued < TARGET_QUEUE && guard++ < RING_BUFS) {
-        s16 *dst = ring_data[ring_next];
-        int avail = acc_available();
-
-        for (int i = 0; i < FRAMES_PER_BUF; i++) {
-            if (avail > 0) {
-                dst[i * CHANNELS + 0] = acc[acc_read * CHANNELS + 0];
-                dst[i * CHANNELS + 1] = acc[acc_read * CHANNELS + 1];
-
-                acc[acc_read * CHANNELS + 0] = 0;
-                acc[acc_read * CHANNELS + 1] = 0;
-
-                acc_read = (acc_read + 1) % ACC_FRAMES;
-                avail--;
-            } else {
-                dst[i * CHANNELS + 0] = 0;
-                dst[i * CHANNELS + 1] = 0;
-            }
-        }
-
-        ring[ring_next].data_size = (u32)(FRAMES_PER_BUF * CHANNELS * sizeof(s16));
-        ring[ring_next].data_offset = 0;
-
-        if (R_FAILED(audoutAppendAudioOutBuffer(&ring[ring_next])))
+    while (audio_produced_ns + BUF_NS < elapsed + LEAD_NS && guard++ < RING_BUFS) {
+        if (!append_one())
             break;
 
-        ring_next = (ring_next + 1) % RING_BUFS;
-        queued++;
+        audio_produced_ns += BUF_NS;
     }
 }
