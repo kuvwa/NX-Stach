@@ -915,17 +915,7 @@ static void stick_update(StickRepeat *st, HidAnalogStickState raw,
 
 static void show_splash(Framebuffer *fb, FT_Face face, FT_Face face_small)
 {
-    PadState pad;
-    padInitializeDefault(&pad);
-
-    for (int frame = 0; frame < 135; frame++) {
-        padUpdate(&pad);
-
-        u32 down = padGetButtonsDown(&pad);
-
-        if (frame > 25 && down)
-            break;
-
+    for (int frame = 0; frame < 68; frame++) {
         u32 stride;
         u32 *px = (u32 *)framebufferBegin(fb, &stride);
         fb_width = stride / sizeof(u32);
