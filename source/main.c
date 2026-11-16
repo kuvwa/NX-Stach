@@ -9,13 +9,32 @@
 #include "library.h"
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#include "stb_image.h"
 
 #define W 1280
 #define H 720
 
+#define ACH_ICON_SIZE 44
+
 static u32 fb_width;
 static int clip_left = 0;
 static int clip_right = W;
+
+static u8 text_r = 255, text_g = 255, text_b = 255;
+
+static void set_text_color(u8 r, u8 g, u8 b)
+{
+    text_r = r;
+    text_g = g;
+    text_b = b;
+}
+
+static void reset_text_color(void)
+{
+    text_r = 255;
+    text_g = 255;
+    text_b = 255;
+}
 
 static void rect(u32 *fb, int x, int y, int w, int h, u32 color)
 {
@@ -89,9 +108,9 @@ static void draw_text(FT_Face face, u32 *fb, int x, int y, const char *str)
                 u8 green = (bg >> 8) & 0xFF;
                 u8 blue = (bg >> 16) & 0xFF;
 
-                red += (255 - red) * a / 255;
-                green += (255 - green) * a / 255;
-                blue += (255 - blue) * a / 255;
+                red += (text_r - red) * a / 255;
+                green += (text_g - green) * a / 255;
+                blue += (text_b - blue) * a / 255;
 
                 fb[py * fb_width + px] = RGBA8_MAXALPHA(red, green, blue);
             }
@@ -211,6 +230,125 @@ static int load_catalog(const char *appid,
     return count;
 }
 
+
+static u32 *ach_icons[MAX_ACHIEVEMENTS];
+
+static void ach_icons_clear(void)
+{
+    for (int i = 0; i < MAX_ACHIEVEMENTS; i++) {
+        free(ach_icons[i]);
+        ach_icons[i] = NULL;
+    }
+}
+
+static u32 *load_achievement_icon(const char *appid, const char *id)
+{
+    char path[256];
+    snprintf(path, sizeof(path), "romfs:/catalog/icons/%.32s/%.96s.jpg", appid, id);
+
+    FILE *file = fopen(path, "rb");
+    if (!file) return NULL;
+
+    if (fseek(file, 0, SEEK_END) != 0) { fclose(file); return NULL; }
+
+    long size = ftell(file);
+    if (size <= 0 || size > 262144) { fclose(file); return NULL; }
+
+    rewind(file);
+
+    u8 *buffer = malloc((size_t)size);
+    if (!buffer) { fclose(file); return NULL; }
+
+    if (fread(buffer, 1, (size_t)size, file) != (size_t)size) {
+        fclose(file);
+        free(buffer);
+        return NULL;
+    }
+
+    fclose(file);
+
+    int width = 0, height = 0, channels = 0;
+    stbi_uc *image = stbi_load_from_memory(buffer, (int)size,
+                                           &width, &height, &channels, 4);
+    free(buffer);
+
+    if (!image || width <= 0 || height <= 0) {
+        if (image) stbi_image_free(image);
+        return NULL;
+    }
+
+    u32 *pixels = malloc((size_t)ACH_ICON_SIZE * ACH_ICON_SIZE * sizeof(u32));
+
+    if (!pixels) {
+        stbi_image_free(image);
+        return NULL;
+    }
+
+    float scale = (float)width / (float)ACH_ICON_SIZE;
+    if ((float)height / (float)ACH_ICON_SIZE > scale)
+        scale = (float)height / (float)ACH_ICON_SIZE;
+
+    float off_x = ((float)width - (float)ACH_ICON_SIZE * scale) / 2.0f;
+    float off_y = ((float)height - (float)ACH_ICON_SIZE * scale) / 2.0f;
+
+    for (int y = 0; y < ACH_ICON_SIZE; y++) {
+        int sy = (int)(off_y + (float)y * scale);
+        if (sy < 0) sy = 0;
+        if (sy >= height) sy = height - 1;
+
+        for (int x = 0; x < ACH_ICON_SIZE; x++) {
+            int sx = (int)(off_x + (float)x * scale);
+            if (sx < 0) sx = 0;
+            if (sx >= width) sx = width - 1;
+
+            const stbi_uc *src = image + ((size_t)sy * width + sx) * 4;
+            pixels[(size_t)y * ACH_ICON_SIZE + x] =
+                RGBA8_MAXALPHA(src[0], src[1], src[2]);
+        }
+    }
+
+    stbi_image_free(image);
+    return pixels;
+}
+
+static void ach_icons_load(const char *appid, int count,
+                           const SteamAchievement *achievements)
+{
+    ach_icons_clear();
+
+    if (!appid || !appid[0] || count <= 0)
+        return;
+
+    for (int i = 0; i < count && i < MAX_ACHIEVEMENTS; i++)
+        ach_icons[i] = load_achievement_icon(appid, achievements[i].id);
+}
+
+static void draw_achievement_icon(u32 *fb, int x, int y,
+                                  const u32 *icon, bool dim)
+{
+    for (int j = 0; j < ACH_ICON_SIZE; j++) {
+        int py = y + j;
+        if (py < 0 || py >= H) continue;
+
+        for (int i = 0; i < ACH_ICON_SIZE; i++) {
+            int px = x + i;
+            if (px < 0 || px >= W) continue;
+
+            u32 color = icon[(size_t)j * ACH_ICON_SIZE + i];
+            u8 red = color & 0xFF;
+            u8 green = (color >> 8) & 0xFF;
+            u8 blue = (color >> 16) & 0xFF;
+
+            if (dim) {
+                red = (u8)(red * 45 / 100);
+                green = (u8)(green * 45 / 100);
+                blue = (u8)(blue * 45 / 100);
+            }
+
+            fb[(size_t)py * fb_width + px] = RGBA8_MAXALPHA(red, green, blue);
+        }
+    }
+}
 
 static Result scan_user_save_data(u64 target_id, s64 *records_read,
                                   bool *found, u64 *save_id)
@@ -474,6 +612,15 @@ int main(int argc, char **argv)
     }
     FT_Set_Pixel_Sizes(face, 0, 30);
 
+    FT_Face face_small;
+    if (FT_New_Memory_Face(library, font.address, font.size, 0, &face_small)) {
+        FT_Done_Face(face);
+        FT_Done_FreeType(library);
+        plExit();
+        return 1;
+    }
+    FT_Set_Pixel_Sizes(face_small, 0, 20);
+
     Framebuffer fb;
     framebufferCreate(&fb, nwindowGetDefault(), W, H, PIXEL_FORMAT_RGBA_8888, 2);
     framebufferMakeLinear(&fb);
@@ -482,17 +629,13 @@ int main(int argc, char **argv)
     int game_count = library_load(games, MAX_GAMES);
 
     bool romfs_ready = R_SUCCEEDED(romfsInit());
-    bool save_ready = save_init();
+    save_init();
     bool net_ready = net_init();
 
     char sync_status[128] = "Not synchronized";
 
     SteamAchievement achievements[MAX_ACHIEVEMENTS] = {0};
     int achievement_count = -1;
-
-    if (romfs_ready && game_count > 0 && games[0].steam_appid[0])
-        achievement_count = load_catalog(games[0].steam_appid,
-                                         achievements, MAX_ACHIEVEMENTS);
 
     u8 save_flags[MAX_ACHIEVEMENTS] = {0};
     int save_flag_count = 0;
@@ -501,9 +644,6 @@ int main(int argc, char **argv)
     int game_screen = 0;
     int achievement_offset = 0;
 
-    if (game_count > 0)
-        save_flag_count = load_save_flags(games[0].steam_appid, save_flags,
-                                          MAX_ACHIEVEMENTS);
 
     int diagnostic_screen = 0;
     Result diagnostic_result = 0;
@@ -588,6 +728,9 @@ int main(int argc, char **argv)
 
                 save_flag_count = load_save_flags(games[selected].steam_appid,
                                                   save_flags, MAX_ACHIEVEMENTS);
+
+                ach_icons_load(games[selected].steam_appid,
+                               achievement_count, achievements);
 
                 achievement_offset = 0;
                 game_screen = 1;
@@ -683,18 +826,18 @@ int main(int argc, char **argv)
                 clip_right = x + LIB_COVER_W - 10;
 
                 if (i == selected) {
-                    int text_width = measure_text(face, games[i].name);
+                    int text_width = measure_text(face_small, games[i].name);
                     int cycle = text_width + 40;
                     if (cycle < 1) cycle = 1;
 
                     marquee_offset = (marquee_offset + 2) % cycle;
 
-                    draw_text(face, pixels, x + 10 - marquee_offset,
-                              bar_y + 33, games[i].name);
-                    draw_text(face, pixels, x + 10 - marquee_offset + cycle,
-                              bar_y + 33, games[i].name);
+                    draw_text(face_small, pixels, x + 10 - marquee_offset,
+                              bar_y + 30, games[i].name);
+                    draw_text(face_small, pixels, x + 10 - marquee_offset + cycle,
+                              bar_y + 30, games[i].name);
                 } else {
-                    draw_text(face, pixels, x + 10, bar_y + 33,
+                    draw_text(face_small, pixels, x + 10, bar_y + 30,
                               games[i].name);
                 }
 
@@ -716,6 +859,7 @@ int main(int argc, char **argv)
             draw_text(face, pixels, 55, 72, games[selected].name);
 
             int unlocked_count = 0;
+
             for (int i = 0; i < achievement_count; i++) {
                 if (achievement_unlocked(games[selected].steam_appid, i,
                                          &achievements[i],
@@ -723,19 +867,33 @@ int main(int argc, char **argv)
                     unlocked_count++;
             }
 
-            char stats[96];
-            if (achievement_count >= 0) {
-                snprintf(stats, sizeof(stats), "Achievements: %d / %d",
+            round_rect(pixels, 55, 100, 1170, 120, 18,
+                       RGBA8_MAXALPHA(45, 48, 53));
+
+            if (achievement_count > 0) {
+                char stats[96];
+                snprintf(stats, sizeof(stats), "%d / %d unlocked",
                          unlocked_count, achievement_count);
+                draw_text(face, pixels, 85, 145, stats);
+
+                int bar_w = 1110;
+                int filled = achievement_count > 0
+                    ? bar_w * unlocked_count / achievement_count : 0;
+
+                round_rect(pixels, 85, 172, bar_w, 14, 7,
+                           RGBA8_MAXALPHA(30, 32, 36));
+                if (filled > 0)
+                    round_rect(pixels, 85, 172, filled, 14, 7,
+                               RGBA8_MAXALPHA(120, 200, 255));
             } else {
-                snprintf(stats, sizeof(stats), "Catalog: ERROR");
+                draw_text(face, pixels, 85, 145, "No achievements catalog");
             }
 
-            round_rect(pixels, 55, 110, 1170, 120, 18,
-                       RGBA8_MAXALPHA(52, 55, 60));
-            draw_text(face, pixels, 85, 160, stats);
-            draw_text(face, pixels, 85, 205, sync_status);
-            draw_text(face, pixels, 55, 285, "Achievements");
+            set_text_color(150, 155, 165);
+            draw_text(face_small, pixels, 85, 200, sync_status);
+            reset_text_color();
+
+            draw_text(face, pixels, 55, 265, "Achievements");
 
             for (int i = 0; i < 4; i++) {
                 int index = achievement_offset + i;
@@ -745,20 +903,38 @@ int main(int argc, char **argv)
                     games[selected].steam_appid, index, &achievements[index],
                     save_flags, save_flag_count);
 
-                int y = 310 + i * 65;
+                int y = 300 + i * 78;
                 u32 color = unlocked
-                    ? RGBA8_MAXALPHA(62, 78, 65)
-                    : RGBA8_MAXALPHA(52, 55, 60);
+                    ? RGBA8_MAXALPHA(58, 72, 60)
+                    : RGBA8_MAXALPHA(45, 48, 53);
 
-                round_rect(pixels, 55, y, 1170, 55, 14, color);
+                round_rect(pixels, 55, y, 1170, 70, 14, color);
 
-                char row_text[256];
-                snprintf(row_text, sizeof(row_text), "%s  [%s]",
-                         achievements[index].name,
-                         unlocked ? "UNLOCKED" : "LOCKED");
+                if (ach_icons[index]) {
+                    draw_achievement_icon(pixels, 70, y + 13,
+                                          ach_icons[index], !unlocked);
+                } else {
+                    round_rect(pixels, 70, y + 13, ACH_ICON_SIZE, ACH_ICON_SIZE,
+                               8, RGBA8_MAXALPHA(32, 34, 38));
+                }
 
-                draw_text(face, pixels, 85, y + 38, row_text);
+                if (unlocked)
+                    set_text_color(190, 240, 195);
+                else
+                    set_text_color(210, 212, 218);
+
+                draw_text(face_small, pixels, 128, y + 30,
+                          achievements[index].name);
+                reset_text_color();
+
+                set_text_color(140, 145, 155);
+                draw_text(face_small, pixels, 128, y + 55,
+                          achievements[index].description);
+                reset_text_color();
             }
+
+            if (achievement_count > achievement_offset + 4)
+                draw_text(face_small, pixels, W - 120, 620, "more...");
 
             char source_line[128];
             if (save_flag_count > 0)
@@ -766,22 +942,26 @@ int main(int argc, char **argv)
                          "Progress: from game save (%d flags)", save_flag_count);
             else
                 snprintf(source_line, sizeof(source_line),
-                         "Progress: progress.json (save read failed: %s)",
+                         "Progress: progress.json (%s)",
                          gamesave_last_error());
 
-            draw_text(face, pixels, 55, 640, source_line);
-            draw_text(face, pixels, 55, 680,
-                save_ready ? "SD card: READY" : "SD card: ERROR");
+            set_text_color(130, 135, 145);
+            draw_text(face_small, pixels, 55, 660, source_line);
+            reset_text_color();
+
+            draw_text(face_small, pixels, W - 230, 660, "B: Back");
         }
 
         framebufferEnd(&fb);
     }
 
     if (net_ready) net_exit();
+    ach_icons_clear();
     save_exit();
     library_exit();
     if (romfs_ready) romfsExit();
     framebufferClose(&fb);
+    FT_Done_Face(face_small);
     FT_Done_Face(face);
     FT_Done_FreeType(library);
     plExit();

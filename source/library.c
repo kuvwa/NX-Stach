@@ -185,6 +185,29 @@ static int compare_games(const void *a, const void *b) {
     return strcasecmp(((const Game *)a)->name, ((const Game *)b)->name);
 }
 
+// Отсекаем хоумбрю-лончеры, их в списке игр быть не должно.
+static bool looks_like_homebrew(const char *name) {
+    static const char *skip[] = {
+        "hbmenu", "Homebrew", "DBI", "Goldleaf", "Atmosphere",
+        "nx-hbmenu", "Awoo", "Tinfoil", "NUT", "ftpd", "sys-ftpd",
+    };
+
+    if (!name) return true;
+
+    for (unsigned i = 0; i < sizeof(skip) / sizeof(skip[0]); i++) {
+        size_t len = strlen(skip[i]);
+        const char *p = name;
+
+        while (*p) {
+            if (strncasecmp(p, skip[i], len) == 0)
+                return true;
+            p++;
+        }
+    }
+
+    return false;
+}
+
 int library_load(Game *games, int max_games) {
     if (!games || max_games <= 0)
         return 0;
@@ -209,6 +232,7 @@ int library_load(Game *games, int max_games) {
 
                 if (!title_id) continue;
                 if (!read_name(title_id, name, sizeof(name))) continue;
+                if (looks_like_homebrew(name)) continue;
 
                 games[count].title_id = title_id;
                 snprintf(games[count].name, sizeof(games[count].name), "%s", name);
