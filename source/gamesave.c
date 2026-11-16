@@ -62,12 +62,35 @@ static bool find_save_attributes(u64 title_id, FsSaveDataSpaceId *space,
     return found;
 }
 
-static u8 *read_whole_file(FsFileSystem *fs, const char *path, size_t *out_size)
+bool gamesave_open(u64 title_id, FsFileSystem *fs)
+{
+    last_error = "NOT_STARTED";
+
+    FsSaveDataSpaceId space;
+    FsSaveDataAttribute attr;
+
+    if (!find_save_attributes(title_id, &space, &attr))
+        return false;
+
+    if (R_FAILED(fsOpenReadOnlySaveDataFileSystem(fs, space, &attr))) {
+        last_error = "SAVE_OPEN";
+        return false;
+    }
+
+    return true;
+}
+
+void gamesave_close(FsFileSystem *fs)
+{
+    fsFsClose(fs);
+}
+
+u8 *gamesave_read_file(FsFileSystem *fs, const char *path, size_t *out_size)
 {
     FsFile file;
 
     if (R_FAILED(fsFsOpenFile(fs, path, FsOpenMode_Read, &file))) {
-        last_error = "VFS_OPEN";
+        last_error = "FILE_OPEN";
         return NULL;
     }
 
@@ -75,7 +98,7 @@ static u8 *read_whole_file(FsFileSystem *fs, const char *path, size_t *out_size)
 
     if (R_FAILED(fsFileGetSize(&file, &file_size)) || file_size <= 0 ||
         file_size > MAX_VFS_SIZE) {
-        last_error = "VFS_SIZE";
+        last_error = "FILE_SIZE";
         fsFileClose(&file);
         return NULL;
     }
@@ -98,7 +121,7 @@ static u8 *read_whole_file(FsFileSystem *fs, const char *path, size_t *out_size)
 
         if (R_FAILED(fsFileRead(&file, offset, buffer + offset,
                                 chunk, 0, &got)) || got == 0) {
-            last_error = "VFS_READ";
+            last_error = "FILE_READ";
             free(buffer);
             fsFileClose(&file);
             return NULL;
@@ -113,102 +136,130 @@ static u8 *read_whole_file(FsFileSystem *fs, const char *path, size_t *out_size)
     return buffer;
 }
 
-static int parse_flags(const u8 *data, size_t size, u8 *flags, int max_flags)
+static int parse_flags(const u8 *data, size_t size, int skip, int format,
+                       u8 *flags, int max_flags)
 {
     int count = 0;
+    int seen = 0;
 
-    for (size_t i = 0; i < size && count < max_flags; i++) {
-        if (data[i] == '0' || data[i] == '1') {
+    if (format == 0) {
+        for (size_t i = 0; i < size; i++) {
+            if (data[i] != '0' && data[i] != '1')
+                continue;
+
+            if (seen++ < skip)
+                continue;
+
+            if (count >= max_flags)
+                break;
+
             flags[count++] = (u8)(data[i] - '0');
-        } else if (data[i] == '\n' || data[i] == '\r' || data[i] == 0) {
-            continue;
-        } else {
-            break;
+        }
+    } else {
+        for (size_t i = 0; i < size; i++) {
+            if (data[i] != 0 && data[i] != 1)
+                continue;
+
+            if (seen++ < skip)
+                continue;
+
+            if (count >= max_flags)
+                break;
+
+            flags[count++] = data[i];
         }
     }
 
     return count;
 }
 
-int gamesave_read_unlocked(u64 title_id, const char *base_path,
-                           u8 *flags, int max_flags)
+int gamesave_read_block(u64 title_id, const char *file_path, const char *marker,
+                        int offset, int skip, int format,
+                        u8 *flags, int max_flags)
 {
     last_error = "NOT_STARTED";
 
-    if (!flags || max_flags <= 0 || !base_path) {
+    if (!file_path || !flags || max_flags <= 0) {
         last_error = "ARGUMENT";
         return -1;
     }
 
-    FsSaveDataSpaceId space;
-    FsSaveDataAttribute attr;
+    FsFileSystem fs;
 
-    if (!find_save_attributes(title_id, &space, &attr))
+    if (!gamesave_open(title_id, &fs))
         return -1;
 
-    FsFileSystem save_fs;
+    size_t size = 0;
+    u8 *data = gamesave_read_file(&fs, file_path, &size);
 
-    if (R_FAILED(fsOpenReadOnlySaveDataFileSystem(&save_fs, space, &attr))) {
-        last_error = "SAVE_OPEN";
+    gamesave_close(&fs);
+
+    if (!data)
+        return -1;
+
+    size_t start = (size_t)offset;
+
+    if (marker && marker[0]) {
+        size_t mlen = strlen(marker);
+        size_t pos = (size_t)-1;
+
+        for (size_t i = 0; i + mlen < size; i++) {
+            if (memcmp(data + i, marker, mlen) == 0) {
+                pos = i;
+                break;
+            }
+        }
+
+        if (pos == (size_t)-1) {
+            last_error = "MARKER_NOT_FOUND";
+            free(data);
+            return -1;
+        }
+
+        start = pos + mlen;
+
+        if (start + 4 > size) {
+            last_error = "TRUNCATED";
+            free(data);
+            return -1;
+        }
+
+        u32 block_size = 0;
+        memcpy(&block_size, data + start, sizeof(block_size));
+
+        if ((size_t)block_size > size - start - 4 || block_size == 0) {
+            last_error = "BAD_SIZE";
+            free(data);
+            return -1;
+        }
+
+        start += 4;
+        size = start + block_size;
+    }
+
+    if (start >= size) {
+        last_error = "OFFSET";
+        free(data);
         return -1;
     }
 
+    int count = parse_flags(data + start, size - start, skip, format,
+                            flags, max_flags);
+
+    free(data);
+
+    last_error = count > 0 ? "OK" : "PARSE";
+    return count > 0 ? count : -1;
+}
+
+int gamesave_read_unlocked(u64 title_id, const char *base_path,
+                           u8 *flags, int max_flags)
+{
     char path[256];
     snprintf(path, sizeof(path), "%s/savedata.vfs", base_path);
 
-    size_t vfs_size = 0;
-    u8 *vfs = read_whole_file(&save_fs, path, &vfs_size);
-
-    fsFsClose(&save_fs);
-
-    if (!vfs)
-        return -1;
-
-    const char *marker = "unlocked_achievements.dat";
-    const size_t marker_len = strlen(marker);
-    u8 *found = NULL;
-
-    for (size_t i = 0; i + marker_len < vfs_size; i++) {
-        if (memcmp(vfs + i, marker, marker_len) == 0) {
-            found = vfs + i + marker_len;
-            break;
-        }
-    }
-
-    if (!found) {
-        last_error = "MARKER_NOT_FOUND";
-        free(vfs);
-        return -1;
-    }
-
-    size_t offset = (size_t)(found - vfs);
-
-    if (offset + 4 > vfs_size) {
-        last_error = "TRUNCATED";
-        free(vfs);
-        return -1;
-    }
-
-    u32 data_size = 0;
-    memcpy(&data_size, vfs + offset, sizeof(data_size));
-
-    if ((size_t)data_size > vfs_size - offset - 4 || data_size == 0) {
-        last_error = "BAD_SIZE";
-        free(vfs);
-        return -1;
-    }
-
-    int count = parse_flags(vfs + offset + 4, data_size, flags, max_flags);
-
-    free(vfs);
-
-    if (count <= 0) {
-        last_error = "PARSE";
-        return -1;
-    }
-
-    last_error = "OK";
-    return count;
+    return gamesave_read_block(title_id, path, "unlocked_achievements.dat",
+                               0, 1, 0, flags, max_flags);
 }
 
 static void dump_dir(FsFileSystem *fs, const char *path, int depth, FILE *out)
@@ -244,7 +295,7 @@ static void dump_dir(FsFileSystem *fs, const char *path, int depth, FILE *out)
 
             if (is_dir) {
                 char child[512];
-                snprintf(child, sizeof(child), "%s/%s", path, entries[i].name);
+                snprintf(child, sizeof(child), "%.200s/%.200s", path, entries[i].name);
                 dump_dir(fs, child, depth + 1, out);
             }
         }
@@ -257,15 +308,9 @@ static void dump_dir(FsFileSystem *fs, const char *path, int depth, FILE *out)
 
 void gamesave_dump_tree(u64 title_id)
 {
-    FsSaveDataSpaceId space;
-    FsSaveDataAttribute attr;
-
-    if (!find_save_attributes(title_id, &space, &attr))
-        return;
-
     FsFileSystem fs;
 
-    if (R_FAILED(fsOpenReadOnlySaveDataFileSystem(&fs, space, &attr)))
+    if (!gamesave_open(title_id, &fs))
         return;
 
     FILE *out = fopen("sdmc:/switch/NX-Stach/save_tree.txt", "w");
@@ -276,5 +321,5 @@ void gamesave_dump_tree(u64 title_id)
         fclose(out);
     }
 
-    fsFsClose(&fs);
+    gamesave_close(&fs);
 }

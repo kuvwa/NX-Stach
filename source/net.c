@@ -122,8 +122,9 @@ static bool decode_chunked(char *body, size_t *length) {
     return false;
 }
 
-bool net_https_get(const char *host, const char *path,
-                   char *response, size_t response_size) {
+bool net_https_request(const char *host, const char *method, const char *path,
+                       const char *content_type, const char *req_body,
+                       size_t body_len, char *response, size_t response_size) {
     last_error = "ARGUMENT";
     if (!socket_ready || !ssl_ready ||
         !host || !path || !response || response_size < 256)
@@ -198,25 +199,58 @@ bool net_https_get(const char *host, const char *path,
     if (R_FAILED(sslConnectionDoHandshake(
             &connection, NULL, NULL, NULL, 0))) { last_error = "TLS_HANDSHAKE"; goto cleanup; }
 
-    char request[1024];
+    char *request = malloc(1024 + body_len);
 
-    int request_length = snprintf(
-        request, sizeof(request),
-        "GET %s HTTP/1.0\r\n"
-        "Host: %s\r\n"
-        "User-Agent: NX-Stach/1.0\r\n"
-        "Accept: application/json\r\n"
-        "Accept-Encoding: identity\r\n"
-        "Connection: close\r\n"
-        "\r\n",
-        path, host
-    );
+    if (!request) { last_error = "OUT_OF_MEMORY"; goto cleanup; }
 
-    if (request_length < 0 ||
-        (size_t)request_length >= sizeof(request))
+    int request_length;
+
+    if (req_body && body_len > 0) {
+        request_length = snprintf(
+            request, 1024 + body_len,
+            "%s %s HTTP/1.0\r\n"
+            "Host: %s\r\n"
+            "User-Agent: NX-Stach/1.0\r\n"
+            "Accept: application/json\r\n"
+            "Content-Type: %s\r\n"
+            "Content-Length: %u\r\n"
+            "Accept-Encoding: identity\r\n"
+            "Connection: close\r\n"
+            "\r\n",
+            method, path, host,
+            content_type ? content_type : "application/json",
+            (unsigned)body_len);
+
+        if (request_length <= 0 || (size_t)request_length + body_len >= 1024 + body_len) {
+            free(request);
+            goto cleanup;
+        }
+
+        memcpy(request + request_length, req_body, body_len);
+        request_length += (int)body_len;
+    } else {
+        request_length = snprintf(
+            request, 1024,
+            "%s %s HTTP/1.0\r\n"
+            "Host: %s\r\n"
+            "User-Agent: NX-Stach/1.0\r\n"
+            "Accept: application/json\r\n"
+            "Accept-Encoding: identity\r\n"
+            "Connection: close\r\n"
+            "\r\n",
+            method, path, host);
+    }
+
+    if (request_length <= 0) {
+        free(request);
         goto cleanup;
+    }
 
-    if (!ssl_write_all(&connection, request, (size_t)request_length)) { last_error = "HTTP_SEND"; goto cleanup; }
+    bool sent = ssl_write_all(&connection, request, (size_t)request_length);
+
+    free(request);
+
+    if (!sent) { last_error = "HTTP_SEND"; goto cleanup; }
 
     size_t used = 0;
 
@@ -293,4 +327,11 @@ cleanup:
         response[0] = '\0';
 
     return success;
+}
+
+bool net_https_get(const char *host, const char *path,
+                   char *response, size_t response_size)
+{
+    return net_https_request(host, "GET", path, NULL, NULL, 0,
+                             response, response_size);
 }

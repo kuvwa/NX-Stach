@@ -12,6 +12,9 @@
 #include "gamesave.h"
 #include "library.h"
 #include "history.h"
+#include "recipe.h"
+#include "scanner.h"
+#include "upload.h"
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -677,46 +680,23 @@ static int load_catalog(const char *appid,
 
 /* ------------------------------ сейв игры ------------------------------ */
 
-typedef struct {
-    const char *appid;
-    u64 title_id;
-    const char *save_path;
-    int flag_offset;
-} SaveSource;
-
-static const SaveSource SAVE_SOURCES[] = {
-    { "219150", 0x0100D0E00E51E000ULL, "/HotlineMiami", 1 },
-    { "274170", 0x0100D0E00E51E000ULL, "/HotlineMiami2", 1 },
-};
-
-static int save_flag_offset = 0;
-
-static int load_save_flags(const char *appid, u8 *flags, int max_flags)
+static int load_save_flags(u64 title_id, const char *appid,
+                           u8 *flags, int max_flags)
 {
-    if (!appid) return -1;
+    Recipe recipe;
 
-    save_flag_offset = 0;
+    if (!recipe_load(title_id, appid, &recipe))
+        return -1;
 
-    for (unsigned i = 0; i < sizeof(SAVE_SOURCES) / sizeof(SAVE_SOURCES[0]); i++) {
-        if (strcmp(SAVE_SOURCES[i].appid, appid) == 0) {
-            save_flag_offset = SAVE_SOURCES[i].flag_offset;
-            return gamesave_read_unlocked(SAVE_SOURCES[i].title_id,
-                                          SAVE_SOURCES[i].save_path,
-                                          flags, max_flags);
-        }
-    }
-
-    return -1;
+    return recipe_read_flags(&recipe, flags, max_flags);
 }
 
 static bool achievement_unlocked(const char *appid, int index,
                                  const SteamAchievement *achievement,
                                  const u8 *flags, int flag_count)
 {
-    if (flag_count > 0) {
-        int slot = index + save_flag_offset;
-        return slot >= 0 && slot < flag_count && flags[slot] != 0;
-    }
+    if (flag_count > 0)
+        return index >= 0 && index < flag_count && flags[index] != 0;
 
     return save_is_unlocked(appid, achievement->id);
 }
@@ -873,6 +853,34 @@ static void build_list(const char *appid, const SteamAchievement *achievements,
     list_total_height = y;
 }
 
+static void draw_progress(Framebuffer *fb, FT_Face face, FT_Face face_small,
+                          const char *title, const char *line, int percent)
+{
+    u32 stride;
+    u32 *px = (u32 *)framebufferBegin(fb, &stride);
+    fb_width = stride / sizeof(u32);
+
+    fill_bg(px, COLOR_BG);
+
+    clip_left = 0;
+    clip_right = W;
+    clip_top = 0;
+    clip_bottom = H;
+
+    draw_text(face, px, 55, 300, title);
+
+    set_text_color(170, 175, 185);
+    draw_text(face_small, px, 55, 340, line);
+    reset_text_color();
+
+    round_rect(px, 55, 370, 1170, 16, 8, COLOR_TRACK);
+
+    if (percent > 0)
+        round_rect(px, 55, 370, 1170 * percent / 100, 16, 8, COLOR_ACCENT);
+
+    framebufferEnd(fb);
+}
+
 /* ------------------------------- стики ------------------------------- */
 
 typedef struct {
@@ -999,6 +1007,9 @@ int main(int argc, char **argv)
     float pulse = 1.0f;
     float toggle_anim = 0.0f;
 
+    char toast[160] = "";
+    int toast_frames = 0;
+
     bool touch_down = false;
     int touch_start_x = 0, touch_start_y = 0;
     int touch_last_x = 0, touch_last_y = 0;
@@ -1116,6 +1127,8 @@ int main(int argc, char **argv)
                     screen = 0;
                     ach_icons_clear();
                     consumed = true;
+                } else if (tap_y >= 30 && tap_y <= 78 && tap_x >= 980) {
+                    kDown |= HidNpadButton_Y;
                 } else if (tap_y >= 276 && tap_y <= 332) {
                     only_locked = !only_locked;
                     list_scroll = list_target = 0.0f;
@@ -1240,8 +1253,8 @@ int main(int argc, char **argv)
                             }
                         }
 
-                        flag_count = load_save_flags(game->steam_appid, flags,
-                                                     MAX_ACHIEVEMENTS);
+                        flag_count = load_save_flags(game->title_id, game->steam_appid,
+                                                     flags, MAX_ACHIEVEMENTS);
 
                         if (flag_count > 0) {
                             u64 now = (u64)time(NULL);
@@ -1278,6 +1291,86 @@ int main(int argc, char **argv)
                     screen = 1;
                 }
             } else if (screen == 1) {
+                if ((kDown & HidNpadButton_Y) && achievement_count > 0) {
+                    Game *g = &games[view[selected]];
+
+                    draw_progress(&fb, face, face_small, g->name,
+                                  "Сканируем сейв игры...", 20);
+
+                    ScanResult sr = scan_save_for_achievements(g->title_id,
+                                                               achievement_count);
+
+                    if (sr.found) {
+                        Recipe r;
+                        memset(&r, 0, sizeof(r));
+
+                        r.title_id = g->title_id;
+                        snprintf(r.steam_appid, sizeof(r.steam_appid), "%s",
+                                 g->steam_appid);
+                        snprintf(r.file_path, sizeof(r.file_path), "%s",
+                                 sr.file_path);
+                        snprintf(r.marker, sizeof(r.marker), "%s", sr.marker);
+                        r.offset = sr.offset;
+                        r.skip = sr.skip;
+                        r.format = sr.format;
+                        r.count = achievement_count;
+                        r.valid = true;
+
+                        recipe_save(&r);
+
+                        flag_count = load_save_flags(g->title_id,
+                                                     g->steam_appid, flags,
+                                                     MAX_ACHIEVEMENTS);
+
+                        unlocked_count = 0;
+                        for (int i = 0; i < achievement_count; i++)
+                            if (achievement_unlocked(g->steam_appid, i,
+                                                     &achievements[i],
+                                                     flags, flag_count))
+                                unlocked_count++;
+
+                        char json[640];
+                        snprintf(json, sizeof(json),
+                            "{\n"
+                            "  \"title_id\": \"%016llX\",\n"
+                            "  \"steam_appid\": \"%s\",\n"
+                            "  \"file_path\": \"%s\",\n"
+                            "  \"marker\": \"%s\",\n"
+                            "  \"offset\": %d,\n"
+                            "  \"skip\": %d,\n"
+                            "  \"format\": %d,\n"
+                            "  \"count\": %d,\n"
+                            "  \"verified\": true,\n"
+                            "  \"source\": \"nx-stach-scanner\",\n"
+                            "  \"created\": %llu\n"
+                            "}\n",
+                            (unsigned long long)g->title_id,
+                            g->steam_appid,
+                            sr.file_path, sr.marker,
+                            sr.offset, sr.skip, sr.format, achievement_count,
+                            (unsigned long long)time(NULL));
+
+                        char name[64];
+                        snprintf(name, sizeof(name), "%016llX.json",
+                                 (unsigned long long)g->title_id);
+
+                        GithubConfig cfg;
+                        char msg[160];
+
+                        if (github_load_config(&cfg))
+                            github_upload_file(&cfg, name, json, msg, sizeof(msg));
+                        else
+                            snprintf(msg, sizeof(msg),
+                                     "сохранено локально (нет config.json)");
+
+                        snprintf(toast, sizeof(toast), "%s. %s", sr.note, msg);
+                        toast_frames = 300;
+                    } else {
+                        snprintf(toast, sizeof(toast), "%s", sr.note);
+                        toast_frames = 200;
+                    }
+                }
+
                 if (kDown & HidNpadButton_B) {
                     screen = 0;
                     ach_icons_clear();
@@ -1601,6 +1694,24 @@ int main(int argc, char **argv)
             draw_text(face_small, pixels, 200, 110, stats);
             reset_text_color();
 
+            {
+                const char *label = "Сканировать сейв";
+                int lw = measure_text(face_small, label);
+                int bw = lw + 78;
+                int bx = W - 55 - bw;
+                int by = 34;
+
+                round_rect(pixels, bx, by, bw, 40, 12, COLOR_PANEL);
+
+                round_rect(pixels, bx + 12, by + 8, 24, 24, 12,
+                           RGBA8_MAXALPHA(72, 77, 86));
+
+                set_text_color(236, 241, 250);
+                draw_text(face_small, pixels, bx + 18, by + 26, "Y");
+                draw_text(face_small, pixels, bx + 46, by + 26, label);
+                reset_text_color();
+            }
+
             round_rect(pixels, 55, 176, 1170, 76, 16, COLOR_PANEL);
 
             int percent = achievement_count > 0
@@ -1627,6 +1738,28 @@ int main(int argc, char **argv)
             reset_text_color();
 
             draw_toggle(pixels, 1138, 277, toggle_anim);
+        }
+
+        if (toast_frames > 0) {
+            int tw = measure_text(face_small, toast);
+            int w = tw + 48;
+
+            if (w > W - 80) w = W - 80;
+
+            int x = (W - w) / 2;
+            int y = H - 96;
+
+            round_rect(pixels, x, y, w, 46, 14, RGBA8_MAXALPHA(52, 56, 63));
+
+            clip_left = x + 20;
+            clip_right = x + w - 20;
+            set_text_color(235, 240, 250);
+            draw_text(face_small, pixels, x + 24, y + 30, toast);
+            reset_text_color();
+            clip_left = 0;
+            clip_right = W;
+
+            toast_frames--;
         }
 
         framebufferEnd(&fb);
