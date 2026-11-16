@@ -198,6 +198,47 @@ int gamesave_read_block(u64 title_id, const char *file_path, const char *marker,
     if (!data)
         return -1;
 
+    if (format == 4) {
+        // marker = префикс ключа; значение — '0'/'1' после записи 06+u32+01
+        size_t plen = marker ? strlen(marker) : 0;
+
+        if (plen == 0) {
+            last_error = "ARGUMENT";
+            free(data);
+            return -1;
+        }
+
+        int bad = 0;
+
+        for (int i = 0; i < max_flags; i++) {
+            char key[96];
+            snprintf(key, sizeof(key), "%s%d", marker, i);
+
+            size_t klen = strlen(key);
+            size_t pos = (size_t)-1;
+
+            for (size_t k = 0; k + klen < size; k++) {
+                if (memcmp(data + k, key, klen) == 0) {
+                    pos = k + klen;
+                    break;
+                }
+            }
+
+            if (pos == (size_t)-1 || pos + 7 > size) {
+                flags[i] = 0;
+                bad++;
+                continue;
+            }
+
+            // 06 <u32> 01 <'0'|'1'>
+            flags[i] = (data[pos + 6] == '1') ? 1 : 0;
+        }
+
+        free(data);
+        last_error = "OK";
+        return max_flags;
+    }
+
     if (format == 3) {
         size_t mlen = marker ? strlen(marker) : 0;
         size_t pos = (size_t)-1;

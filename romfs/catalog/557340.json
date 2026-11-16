@@ -1,0 +1,185 @@
+{
+  "appid": "557340",
+  "achievements": [
+    {
+      "internal_name": "ACH_0",
+      "localized_name": "Because video games",
+      "localized_desc": "Break 100 crates",
+      "icon": "0ba7ada6e12ec5c6eb31fb3ba403e16b29d440e9.jpg"
+    },
+    {
+      "internal_name": "ACH_1",
+      "localized_name": "Make an entrance",
+      "localized_desc": "Jump through 10 windows",
+      "icon": "6dbb59b2146422db877937d5f8e7ba75a1dc9887.jpg"
+    },
+    {
+      "internal_name": "ACH_2",
+      "localized_name": "Three birds, one explosion",
+      "localized_desc": "Kill at least 3 enemies with one explosion",
+      "icon": "d9e943e5b927f3036b62532b99e80b97211fcf8d.jpg"
+    },
+    {
+      "internal_name": "ACH_3",
+      "localized_name": "Mumbo Combo",
+      "localized_desc": "Get a 10x combo",
+      "icon": "6329941c92d6ed3be5f4bc4ae23cfddecc8e8626.jpg"
+    },
+    {
+      "internal_name": "ACH_4",
+      "localized_name": "Comb-o-ver",
+      "localized_desc": "Get a 20x combo",
+      "icon": "57de9d8165b701aca07483852b1cdb978f57d363.jpg"
+    },
+    {
+      "internal_name": "ACH_5",
+      "localized_name": "Ah, Combon now!",
+      "localized_desc": "Get a 50x combo",
+      "icon": "851776712ea205e09778d44e96ac4e4cdea03497.jpg"
+    },
+    {
+      "internal_name": "ACH_6",
+      "localized_name": "Well done",
+      "localized_desc": "Kick a frying pan in to the face of an enemy",
+      "icon": "06c890e0ede8d5291d2e3bd4c4441471a5717586.jpg"
+    },
+    {
+      "internal_name": "ACH_7",
+      "localized_name": "Sk8, don't h8",
+      "localized_desc": "Kick a skateboard in to the face of an enemy",
+      "icon": "f5a523e9f4560c819befec5f1a7065c7ad3d41f4.jpg"
+    },
+    {
+      "internal_name": "ACH_8",
+      "localized_name": "Think fast",
+      "localized_desc": "Kick a Gas Canister in to the face of an enemy",
+      "icon": "0fd836952dc63acce8cdbddd9858bc37d59d6e25.jpg"
+    },
+    {
+      "internal_name": "ACH_9",
+      "localized_name": "Knife to meat you",
+      "localized_desc": "Stick a knife in to an enemy",
+      "icon": "97844d50e69290131f9ba20bc74005cc986398dc.jpg"
+    },
+    {
+      "internal_name": "ACH_10",
+      "localized_name": "Flying pan",
+      "localized_desc": "Kill enemy by ricocheting bullet off frying pan",
+      "icon": "d4104c034628bc0104111f0ace8c811058bcce11.jpg"
+    },
+    {
+      "internal_name": "ACH_11",
+      "localized_name": "Jester",
+      "localized_desc": "Juggle basketball 10 times without it touching anything",
+      "icon": "84a6bfa7c05222469fd54fb3006b518b73060366.jpg"
+    },
+    {
+      "internal_name": "ACH_12",
+      "localized_name": "Barrely saw it coming",
+      "localized_desc": "Kill an enemy using a barrel",
+      "icon": "7fc391848078ce691ff4616955d72bab6d177be0.jpg"
+    },
+    {
+      "internal_name": "ACH_13",
+      "localized_name": "Table service",
+      "localized_desc": "Flip 10 tables",
+      "icon": "b3bade00d5400df2a89c6ac9fab86e5419ff66d1.jpg"
+    },
+    {
+      "internal_name": "ACH_14",
+      "localized_name": "Shamona",
+      "localized_desc": "Dodge 1000 bullets",
+      "icon": "5f2ea5ef801df404750f40ca8b5e3c6f93ef26de.jpg"
+    },
+    {
+      "internal_name": "ACH_15",
+      "localized_name": "Yes you can",
+      "localized_desc": "Kick enemies 100 times",
+      "icon": "35ceaf154b22a18174dac246722ca37b82d16353.jpg"
+    },
+    {
+      "internal_name": "ACH_16",
+      "localized_name": "They probably deserved it",
+      "localized_desc": "Kill 500 enemies",
+      "icon": "99786271a60a329ea476aea46a401bd80449c395.jpg"
+    },
+    {
+      "internal_name": "ACH_17",
+      "localized_name": "Murderous tendencies",
+      "localized_desc": "Kill 1000 enemies",
+      "icon": "6566e13af685627975b4cd80fe318e00870dafca.jpg"
+    },
+    {
+      "internal_name": "ACH_18",
+      "localized_name": "Questionable moral",
+      "localized_desc": "Kill 2000 enemies",
+      "icon": "dbd68fc47df49fc040dcc7992f35bbe6ba0d4f9e.jpg"
+    },
+    {
+      "internal_name": "ACH_19",
+      "localized_name": "Gold star for you",
+      "localized_desc": "Get an S-rating",
+      "icon": "9c3dc6302435c93f6bca6505691a04378aec8937.jpg"
+    },
+    {
+      "internal_name": "ACH_20",
+      "localized_name": "Wow",
+      "localized_desc": "Get S-rating on 10 levels",
+      "icon": "30fb10a327b53fef411847d24c20f358391f1756.jpg"
+    },
+    {
+      "internal_name": "ACH_21",
+      "localized_name": "Brush your shoulders off",
+      "localized_desc": "Get S-rating on 25 levels",
+      "icon": "d406ea5e8052868bb64b6f1f0d09d57d1feed25b.jpg"
+    },
+    {
+      "internal_name": "ACH_22",
+      "localized_name": "S for Sensei",
+      "localized_desc": "Get S-rating on all levels",
+      "icon": "cd71dc2c30cdd3ac50d517e47cee8432c04e8b45.jpg"
+    },
+    {
+      "internal_name": "ACH_23",
+      "localized_name": "Numb fingers",
+      "localized_desc": "Complete a level without firing a weapon",
+      "icon": "189b19e1dd79a9e9ca9f4b8d8b8c5925e7ff89f1.jpg"
+    },
+    {
+      "internal_name": "ACH_24",
+      "localized_name": "One for the road",
+      "localized_desc": "Finish chapter \"Old Town\"",
+      "icon": "4b297d1479f9f40e5307b22f2e60ea2c9b73518f.jpg"
+    },
+    {
+      "internal_name": "ACH_25",
+      "localized_name": "Leap of faith",
+      "localized_desc": "Finish chapter \"District Null\"",
+      "icon": "d3846bf988628e039173e8ef8225828fd5acaa96.jpg"
+    },
+    {
+      "internal_name": "ACH_26",
+      "localized_name": "What just happened?",
+      "localized_desc": "Finish chapter \"Pedro's World\"",
+      "icon": "ccbfe6f1829037e6130dc8e1fdf4633cb6462578.jpg"
+    },
+    {
+      "internal_name": "ACH_27",
+      "localized_name": "Train of thought",
+      "localized_desc": "Finish chapter \"The Sewer\"",
+      "icon": "f4272aae9e71c313ca87029b91d707cf5305b9e7.jpg"
+    },
+    {
+      "internal_name": "ACH_28",
+      "localized_name": "Connection lost",
+      "localized_desc": "Finish chapter \"The Internet\"",
+      "icon": "15d4e5bae6a9c7e43aea236831257541421cc800.jpg"
+    },
+    {
+      "internal_name": "ACH_29",
+      "localized_name": "Face the truth",
+      "localized_desc": "Finish the game",
+      "icon": "34e4d570b5307c8e457f9e2e5cfed0bd818250b6.jpg"
+    }
+  ]
+}
