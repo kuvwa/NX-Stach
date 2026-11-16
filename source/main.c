@@ -950,12 +950,8 @@ static void beat(const char *stage, int detail)
     g_detail = detail;
 }
 
-static int g_beat_tick = 0;
-
 static void beat_flush(void)
 {
-    if (++g_beat_tick % 12 != 0)
-        return;
 
     FILE *f = fopen("sdmc:/switch/NX-Stach/last_frame.txt", "w");
 
@@ -1444,6 +1440,9 @@ int main(int argc, char **argv)
                 if (y > H) continue;
 
                 beat("tile", i);
+
+                if ((i % 3) == 0)
+                    beat_flush();
 
                 int game_index = view[i];
                 const u32 *cover = library_cover(games[game_index].title_id);

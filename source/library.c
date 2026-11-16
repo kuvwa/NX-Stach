@@ -350,10 +350,19 @@ const u32 *library_cover(u64 title_id) {
     if (!read_control(title_id, &actual))
         return NULL;
 
+    if (actual <= sizeof(NacpStruct) ||
+        actual > sizeof(NsApplicationControlData))
+        return NULL;
+
+    size_t icon_len = (size_t)(actual - sizeof(NacpStruct));
+
+    if (icon_len > sizeof(control_buffer->icon))
+        icon_len = sizeof(control_buffer->icon);
+
     int width = 0, height = 0, channels = 0;
 
     stbi_uc *image = stbi_load_from_memory(
-        control_buffer->icon, (int)(actual - sizeof(NacpStruct)),
+        control_buffer->icon, (int)icon_len,
         &width, &height, &channels, 4);
 
     if (!image || width <= 0 || height <= 0) {
