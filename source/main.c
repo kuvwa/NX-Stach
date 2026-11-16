@@ -1050,6 +1050,70 @@ static u32 *steam_fetch_capsule(int appid)
     return out;
 }
 
+static u64 pins[MAX_GAMES];
+static int pin_count = 0;
+
+static bool is_pinned(u64 id)
+{
+    for (int i = 0; i < pin_count; i++)
+        if (pins[i] == id)
+            return true;
+
+    return false;
+}
+
+static void pins_save(void)
+{
+    FILE *f = fopen("sdmc:/switch/NX-Stach/pins.txt", "w");
+
+    if (!f) return;
+
+    for (int i = 0; i < pin_count; i++)
+        fprintf(f, "%016llX\n", (unsigned long long)pins[i]);
+
+    fclose(f);
+}
+
+static void pins_load(void)
+{
+    FILE *f = fopen("sdmc:/switch/NX-Stach/pins.txt", "r");
+
+    pin_count = 0;
+
+    if (!f) return;
+
+    char line[64];
+
+    while (fgets(line, sizeof(line), f) && pin_count < MAX_GAMES) {
+        unsigned long long v = 0;
+
+        if (sscanf(line, "%llX", &v) == 1 && v)
+            pins[pin_count++] = (u64)v;
+    }
+
+    fclose(f);
+}
+
+static void pin_toggle(u64 id)
+{
+    for (int i = 0; i < pin_count; i++) {
+        if (pins[i] != id)
+            continue;
+
+        for (int k = i; k + 1 < pin_count; k++)
+            pins[k] = pins[k + 1];
+
+        pin_count--;
+        pins_save();
+        return;
+    }
+
+    if (pin_count < MAX_GAMES)
+        pins[pin_count++] = id;
+
+    pins_save();
+}
+
 static void show_splash(Framebuffer *fb, FT_Face face, FT_Face face_small)
 {
     for (int frame = 0; frame < 68; frame++) {
@@ -1076,6 +1140,26 @@ static void show_splash(Framebuffer *fb, FT_Face face, FT_Face face_small)
         reset_text_color();
 
         framebufferEnd(fb);
+    }
+}
+
+static void rebuild_view(int *view, int *view_count, Game *games,
+                         int game_count, const char *search)
+{
+    *view_count = 0;
+
+    for (int pass = 0; pass < 2; pass++) {
+        for (int i = 0; i < game_count && *view_count < MAX_GAMES; i++) {
+            bool pinned = is_pinned(games[i].title_id);
+
+            if ((pass == 0) != pinned)
+                continue;
+
+            if (!text_contains(games[i].name, search))
+                continue;
+
+            view[(*view_count)++] = i;
+        }
     }
 }
 
@@ -1130,6 +1214,7 @@ int main(int argc, char **argv)
 
     save_init();
     lang_load();
+    pins_load();
     bool net_ready = net_init();
     history_load();
 
@@ -1184,8 +1269,7 @@ int main(int argc, char **argv)
     StickRepeat stick_right = {0};
     int hold_frames = 0;
 
-    for (int i = 0; i < game_count; i++)
-        view[view_count++] = i;
+    rebuild_view(view, &view_count, games, game_count, search);
 
     while (appletMainLoop()) {
         padUpdate(&pad);
@@ -1283,13 +1367,11 @@ int main(int argc, char **argv)
                     if (ask_search(query, sizeof(query))) {
                         snprintf(search, sizeof(search), "%s", query);
 
-                        view_count = 0;
                         selected = 0;
                         grid_scroll = grid_target = 0.0f;
 
-                        for (int i = 0; i < game_count; i++)
-                            if (text_contains(games[i].name, search))
-                                view[view_count++] = i;
+                        rebuild_view(view, &view_count, games, game_count,
+                                     search);
                     }
 
                     consumed = true;
@@ -1368,9 +1450,28 @@ int main(int argc, char **argv)
                 selected = 0;
                 grid_scroll = grid_target = 0.0f;
 
-                view_count = 0;
-                for (int i = 0; i < game_count; i++)
-                    view[view_count++] = i;
+                rebuild_view(view, &view_count, games, game_count, search);
+
+                consumed = true;
+            }
+
+            if (!consumed && screen == 0 && (kDown & HidNpadButton_X) &&
+                view_count > 0) {
+                u64 id = games[view[selected]].title_id;
+
+                pin_toggle(id);
+                rebuild_view(view, &view_count, games, game_count, search);
+
+                for (int i = 0; i < view_count; i++)
+                    if (games[view[i]].title_id == id) {
+                        selected = i;
+                        break;
+                    }
+
+                snprintf(toast, sizeof(toast),
+                         is_pinned(id) ? L("Pinned", "Закреплено")
+                                       : L("Unpinned", "Откреплено"));
+                toast_frames = 120;
 
                 consumed = true;
             }
@@ -1382,13 +1483,10 @@ int main(int argc, char **argv)
                 if (ask_search(query, sizeof(query))) {
                     snprintf(search, sizeof(search), "%s", query);
 
-                    view_count = 0;
                     selected = 0;
                     grid_scroll = grid_target = 0.0f;
 
-                    for (int i = 0; i < game_count; i++)
-                        if (text_contains(games[i].name, search))
-                            view[view_count++] = i;
+                    rebuild_view(view, &view_count, games, game_count, search);
                 }
 
                 consumed = true;
@@ -1810,6 +1908,12 @@ int main(int argc, char **argv)
                     reset_text_color();
                     clip_left = 0;
                     clip_right = W;
+                }
+
+                if (is_pinned(games[game_index].title_id)) {
+                    round_rect(pixels, x + 8, y + 8, 20, 20, 10, COLOR_ACCENT);
+                    round_rect(pixels, x + 14, y + 14, 8, 8, 4,
+                               RGBA8_MAXALPHA(24, 26, 30));
                 }
 
                 if (i == selected) {
