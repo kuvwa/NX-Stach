@@ -1,9 +1,0 @@
-{
-  "github": {
-    "owner": "ТВОЙ_НИК",
-    "repo": "nx-stach-db",
-    "branch": "main",
-    "path": "recipes",
-    "token": "github_pat_ВСТАВЬ_СЮДА"
-  }
-}

@@ -3,39 +3,38 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stdarg.h>
+#include <sys/stat.h>
 #include <malloc.h>
 
 #include "audio.h"
 
 #define SAMPLE_RATE 48000
 #define CHANNELS 2
-
-#define FRAMES_PER_BUF 512              // ~10.7 мс на буфер
-#define RING_BUFS 8
-#define TARGET_QUEUE 3                  // держим ~32 мс впереди
-#define ACC_FRAMES (SAMPLE_RATE * 3)    // 3 секунды аккумулятора
-#define MAX_SECONDS 0.35f
+#define MAX_SECONDS 0.20f
 #define MAX_FRAMES ((int)(SAMPLE_RATE * MAX_SECONDS))
 #define MAX_BYTES ((size_t)MAX_FRAMES * CHANNELS * sizeof(s16))
 
 static bool ready = false;
 
+static AudioOutBuffer out_buf;
+static s16 *out_data = NULL;
+
 static s16 *samples[SFX_COUNT];
 static size_t sample_frames[SFX_COUNT];
 
-static s16 acc[ACC_FRAMES * CHANNELS];
-static int acc_read = 0;
-static int acc_write = 0;
+static void log_line(const char *fmt, ...)
+{
+    FILE *f = fopen("sdmc:/switch/NX-Stach/audio_log.txt", "a");
+    if (!f) return;
 
-static AudioOutBuffer ring[RING_BUFS];
-static s16 *ring_data[RING_BUFS];
-static int ring_next = 0;
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(f, fmt, ap);
+    va_end(ap);
 
-static u64 audio_start_tick = 0;
-static u64 audio_produced_ns = 0;
-
-#define BUF_NS ((u64)FRAMES_PER_BUF * 1000000000ULL / SAMPLE_RATE)
-#define LEAD_NS 45000000ULL
+    fclose(f);
+}
 
 /* ----------------------------- генерация звуков ----------------------------- */
 
@@ -79,116 +78,77 @@ static void build_sounds(void)
     int f;
 
     f = 0;
-    add_glass(samples[SFX_NAV], &f, 1500, 1480.0f, 0.13f, 42.0f);
+    add_glass(samples[SFX_NAV], &f, 700, 1480.0f, 0.13f, 70.0f);
     sample_frames[SFX_NAV] = (size_t)f;
 
     f = 0;
-    add_glass(samples[SFX_OK], &f, 1200, 1175.0f, 0.12f, 26.0f);
-    add_glass(samples[SFX_OK], &f, 2600, 1568.0f, 0.12f, 20.0f);
+    add_glass(samples[SFX_OK], &f, 800, 1175.0f, 0.12f, 40.0f);
+    add_glass(samples[SFX_OK], &f, 1200, 1568.0f, 0.12f, 32.0f);
     sample_frames[SFX_OK] = (size_t)f;
 
     f = 0;
-    add_glass(samples[SFX_BACK], &f, 1300, 1318.0f, 0.12f, 26.0f);
-    add_glass(samples[SFX_BACK], &f, 2000, 988.0f, 0.11f, 22.0f);
+    add_glass(samples[SFX_BACK], &f, 800, 1318.0f, 0.12f, 40.0f);
+    add_glass(samples[SFX_BACK], &f, 1000, 988.0f, 0.11f, 34.0f);
     sample_frames[SFX_BACK] = (size_t)f;
 
     f = 0;
-    add_glass(samples[SFX_ERROR], &f, 4200, 392.0f, 0.14f, 9.0f);
+    add_glass(samples[SFX_ERROR], &f, 2200, 392.0f, 0.14f, 14.0f);
     sample_frames[SFX_ERROR] = (size_t)f;
 
     f = 0;
-    add_glass(samples[SFX_START], &f, 1800, 880.0f, 0.11f, 18.0f);
-    add_glass(samples[SFX_START], &f, 1800, 1108.0f, 0.11f, 17.0f);
-    add_glass(samples[SFX_START], &f, 3200, 1318.0f, 0.12f, 13.0f);
+    add_glass(samples[SFX_START], &f, 900, 880.0f, 0.11f, 26.0f);
+    add_glass(samples[SFX_START], &f, 900, 1108.0f, 0.11f, 24.0f);
+    add_glass(samples[SFX_START], &f, 1400, 1318.0f, 0.12f, 20.0f);
     sample_frames[SFX_START] = (size_t)f;
 
     f = 0;
-    add_glass(samples[SFX_TOGGLE], &f, 900, 1760.0f, 0.12f, 60.0f);
-    add_glass(samples[SFX_TOGGLE], &f, 1600, 2093.0f, 0.11f, 38.0f);
+    add_glass(samples[SFX_TOGGLE], &f, 600, 1760.0f, 0.12f, 80.0f);
+    add_glass(samples[SFX_TOGGLE], &f, 900, 2093.0f, 0.11f, 55.0f);
     sample_frames[SFX_TOGGLE] = (size_t)f;
-}
-
-/* --------------------------------- поток --------------------------------- */
-
-static int acc_available(void)
-{
-    int diff = acc_write - acc_read;
-
-    if (diff < 0)
-        diff += ACC_FRAMES;
-
-    return diff;
-}
-
-static void acc_push(s16 l, s16 r)
-{
-    int next = (acc_write + 1) % ACC_FRAMES;
-
-    if (next == acc_read)
-        return;   // переполнение — теряем самый старый кадр
-
-    int sat_l = acc[acc_write * CHANNELS + 0] + l;
-    int sat_r = acc[acc_write * CHANNELS + 1] + r;
-
-    if (sat_l > 32767) sat_l = 32767;
-    if (sat_l < -32768) sat_l = -32768;
-    if (sat_r > 32767) sat_r = 32767;
-    if (sat_r < -32768) sat_r = -32768;
-
-    acc[acc_write * CHANNELS + 0] = (s16)sat_l;
-    acc[acc_write * CHANNELS + 1] = (s16)sat_r;
-
-    acc_write = next;
 }
 
 bool audio_init(void)
 {
     if (ready) return true;
 
+    #define DIR_NX "sdmc:/switch/NX-Stach"
+    mkdir("sdmc:/switch", 0777);
+    mkdir(DIR_NX, 0777);
+
     build_sounds();
 
-    if (R_FAILED(audoutInitialize()))
+    Result rc = audoutInitialize();
+
+    log_line("init rc=0x%08X rate=%u ch=%u fmt=0x%X\n",
+             (unsigned)rc, audoutGetSampleRate(), audoutGetChannelCount(),
+             (unsigned)audoutGetPcmFormat());
+
+    if (R_FAILED(rc))
         return false;
 
-    if (R_FAILED(audoutStartAudioOut()))
+    rc = audoutStartAudioOut();
+
+    log_line("start rc=0x%08X\n", (unsigned)rc);
+
+    if (R_FAILED(rc))
         return false;
 
-    memset(acc, 0, sizeof(acc));
-    acc_read = 0;
-    acc_write = 0;
+    u32 buffer_size = (u32)((MAX_BYTES + 0xFFF) & ~0xFFF);
+    out_data = memalign(0x1000, buffer_size);
 
-    size_t bytes = (size_t)FRAMES_PER_BUF * CHANNELS * sizeof(s16);
-    size_t padded = (bytes + 0xFFF) & ~0xFFF;
+    if (!out_data)
+        return false;
 
-    for (int i = 0; i < RING_BUFS; i++) {
-        ring_data[i] = memalign(0x1000, padded);
+    memset(out_data, 0, buffer_size);
 
-        if (!ring_data[i])
-            return false;
-
-        memset(ring_data[i], 0, padded);
-
-        memset(&ring[i], 0, sizeof(AudioOutBuffer));
-        ring[i].buffer = ring_data[i];
-        ring[i].buffer_size = (u32)padded;
-        ring[i].data_size = (u32)bytes;
-        ring[i].data_offset = 0;
-    }
-
-    ring_next = 0;
-    audio_produced_ns = 0;
-    audio_start_tick = armGetSystemTick();
+    memset(&out_buf, 0, sizeof(out_buf));
+    out_buf.next = NULL;
+    out_buf.buffer = out_data;
+    out_buf.buffer_size = buffer_size;
+    out_buf.data_size = 0;
+    out_buf.data_offset = 0;
 
     ready = true;
-
-    // наполняем очередь тишиной
-    for (int i = 0; i < TARGET_QUEUE; i++) {
-        if (R_SUCCEEDED(audoutAppendAudioOutBuffer(&ring[i]))) {
-            ring_next = (ring_next + 1) % RING_BUFS;
-            audio_produced_ns += BUF_NS;
-        }
-    }
-
     return true;
 }
 
@@ -199,10 +159,8 @@ void audio_exit(void)
     audoutStopAudioOut();
     audoutExit();
 
-    for (int i = 0; i < RING_BUFS; i++) {
-        free(ring_data[i]);
-        ring_data[i] = NULL;
-    }
+    free(out_data);
+    out_data = NULL;
 
     for (int i = 0; i < SFX_COUNT; i++) {
         free(samples[i]);
@@ -212,69 +170,36 @@ void audio_exit(void)
     ready = false;
 }
 
+// Ровно как в примере devkitPro playtone: один буфер, блокирующее проигрывание.
 void audio_play(SfxId id)
 {
     if (!ready || id < 0 || id >= SFX_COUNT)
         return;
 
-    if (!samples[id] || sample_frames[id] == 0)
+    if (!samples[id] || sample_frames[id] == 0 || !out_data)
         return;
 
-    // микшируем звук в аккумулятор
-    for (size_t i = 0; i < sample_frames[id]; i++) {
-        acc_push(samples[id][i * CHANNELS + 0], samples[id][i * CHANNELS + 1]);
-    }
-}
+    size_t bytes = sample_frames[id] * CHANNELS * sizeof(s16);
 
-static bool append_one(void)
-{
-    s16 *dst = ring_data[ring_next];
-    int avail = acc_available();
+    if (bytes > MAX_BYTES)
+        return;
 
-    for (int i = 0; i < FRAMES_PER_BUF; i++) {
-        if (avail > 0) {
-            dst[i * CHANNELS + 0] = acc[acc_read * CHANNELS + 0];
-            dst[i * CHANNELS + 1] = acc[acc_read * CHANNELS + 1];
+    memcpy(out_data, samples[id], bytes);
 
-            acc[acc_read * CHANNELS + 0] = 0;
-            acc[acc_read * CHANNELS + 1] = 0;
+    out_buf.next = NULL;
+    out_buf.buffer = out_data;
+    out_buf.data_size = (u32)bytes;
+    out_buf.data_offset = 0;
 
-            acc_read = (acc_read + 1) % ACC_FRAMES;
-            avail--;
-        } else {
-            dst[i * CHANNELS + 0] = 0;
-            dst[i * CHANNELS + 1] = 0;
-        }
-    }
+    AudioOutBuffer *released = NULL;
+    Result rc = audoutPlayBuffer(&out_buf, &released);
 
-    ring[ring_next].data_size = (u32)(FRAMES_PER_BUF * CHANNELS * sizeof(s16));
-    ring[ring_next].data_offset = 0;
-
-    if (R_FAILED(audoutAppendAudioOutBuffer(&ring[ring_next])))
-        return false;
-
-    ring_next = (ring_next + 1) % RING_BUFS;
-    return true;
+    if (R_FAILED(rc))
+        log_line("play id=%d rc=0x%08X size=%u\n", (int)id, (unsigned)rc,
+                 (unsigned)bytes);
 }
 
 void audio_update(void)
 {
-    if (!ready)
-        return;
-
-    u64 now = armGetSystemTick();
-    u64 elapsed = armTicksToNs(now - audio_start_tick);
-
-    // если поток долго не кормили (заставка, тяжёлый кадр) — синхронизируемся
-    if (elapsed > audio_produced_ns + 400000000ULL)
-        audio_produced_ns = elapsed;
-
-    int guard = 0;
-
-    while (audio_produced_ns + BUF_NS < elapsed + LEAD_NS && guard++ < RING_BUFS) {
-        if (!append_one())
-            break;
-
-        audio_produced_ns += BUF_NS;
-    }
+    // поток не нужен: проигрывание синхронное
 }
