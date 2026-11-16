@@ -1,5 +1,0 @@
-container save_id=0000000000000096 idx=0 type=1
-  dir=sdmc:/switch/NX-Stach/dumps/01000A10041EA000/0000000000000096 files=2
-container save_id=0000000000000097 idx=0 type=2
-  dir=sdmc:/switch/NX-Stach/dumps/01000A10041EA000/0000000000000097 files=1
-title=01000A10041EA000 matched=2 containers=2 files=3

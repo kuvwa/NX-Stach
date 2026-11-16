@@ -18,9 +18,13 @@ tracker/out/
 *.bak3
 *.before_sync
 
-# research dumps (kept out of history, files stay on disk)
-research/*.js
-research/*.html
+# локальные данные и артефакты (не публикуются)
+inbox/
+dist/
+release/
+research/
+mockups/
+*.zip
 
 # OS
 Thumbs.db
