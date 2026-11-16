@@ -788,7 +788,7 @@ static bool ask_search(char *out, size_t size)
         return false;
 
     swkbdConfigMakePresetDefault(&kbd);
-    swkbdConfigSetGuideText(&kbd, "Поиск игры");
+    swkbdConfigSetGuideText(&kbd, "Search game");
 
     char buffer[64] = {0};
     Result rc = swkbdShow(&kbd, buffer, sizeof(buffer));
@@ -838,7 +838,7 @@ static void build_list(const char *appid, const SteamAchievement *achievements,
     if (list_unlocked > 0 && !only_locked) {
         ListRow *row = &list_rows[list_row_count++];
         row->kind = 0;
-        row->label = "ПОЛУЧЕННЫЕ ДОСТИЖЕНИЯ";
+        row->label = "UNLOCKED ACHIEVEMENTS";
         row->ach = list_unlocked;
         row->y = y;
         row->height = SECTION_H;
@@ -860,7 +860,7 @@ static void build_list(const char *appid, const SteamAchievement *achievements,
     if (list_locked > 0) {
         ListRow *row = &list_rows[list_row_count++];
         row->kind = 0;
-        row->label = "НЕПОЛУЧЕННЫЕ ДОСТИЖЕНИЯ";
+        row->label = "LOCKED ACHIEVEMENTS";
         row->ach = list_locked;
         row->y = y;
         row->height = SECTION_H;
@@ -1442,7 +1442,7 @@ int main(int argc, char **argv)
                     snprintf(query, sizeof(query), "%s", g->name);
 
                     if (ask_search(query, sizeof(query)) && query[0]) {
-                        draw_progress(&fb, face, face_small, "Поиск в Steam...",
+                        draw_progress(&fb, face, face_small, "Searching Steam...",
                                       query, 25);
 
                         steam_result_count = steam_search(query, steam_results,
@@ -1450,10 +1450,10 @@ int main(int argc, char **argv)
 
                         for (int i = 0; i < steam_result_count && i < 8; i++) {
                             char line[96];
-                            snprintf(line, sizeof(line), "Иконка %d / %d",
+                            snprintf(line, sizeof(line), "Icon %d / %d",
                                      i + 1, steam_result_count);
 
-                            draw_progress(&fb, face, face_small, "Поиск в Steam...",
+                            draw_progress(&fb, face, face_small, "Searching Steam...",
                                           line, 30 + 60 * i /
                                           (steam_result_count ? steam_result_count : 1));
 
@@ -1466,7 +1466,7 @@ int main(int argc, char **argv)
                         if (steam_result_count > 0) {
                             steam_mode = 1;
                         } else {
-                            snprintf(toast, sizeof(toast), "В Steam ничего не найдено");
+                            snprintf(toast, sizeof(toast), "Nothing found on Steam");
                             toast_frames = 180;
                         }
                     }
@@ -1569,11 +1569,11 @@ int main(int argc, char **argv)
             snprintf(appid_text, sizeof(appid_text), "%d", appid);
 
             char title_line[200];
-            snprintf(title_line, sizeof(title_line), "Импорт: %s",
+            snprintf(title_line, sizeof(title_line), "Import: %s",
                      steam_results[steam_selected].name);
 
             draw_progress(&fb, face, face_small, title_line,
-                          "Скачиваем каталог достижений...", 8);
+                          "Downloading achievements...", 8);
 
             char *json_buf = malloc(512 * 1024);
             int json_len = json_buf
@@ -1612,7 +1612,7 @@ int main(int argc, char **argv)
 
                 for (int i = 0; i < tmp_count; i++) {
                     char line[96];
-                    snprintf(line, sizeof(line), "Загрузка... %d / %d", i + 1, tmp_count);
+                    snprintf(line, sizeof(line), "Loading... %d / %d", i + 1, tmp_count);
 
                     draw_progress(&fb, face, face_small, title_line, line,
                                   12 + 80 * i / tmp_count);
@@ -1660,11 +1660,11 @@ int main(int argc, char **argv)
                 list_scroll = list_target = 0.0f;
                 only_locked = 0;
 
-                snprintf(toast, sizeof(toast), "Импортировано: %d достижений",
+                snprintf(toast, sizeof(toast), "Imported: %d achievements",
                          achievement_count);
                 toast_frames = 200;
             } else {
-                snprintf(toast, sizeof(toast), "Не удалось скачать достижения");
+                snprintf(toast, sizeof(toast), "Failed to download achievements");
                 toast_frames = 200;
             }
         }
@@ -1767,7 +1767,7 @@ int main(int argc, char **argv)
                 draw_text(face_small, pixels, 78, 116, search);
             } else {
                 set_text_color(120, 125, 135);
-                draw_text(face_small, pixels, 78, 116, "Поиск...");
+                draw_text(face_small, pixels, 78, 116, "Search...");
             }
             reset_text_color();
 
@@ -1777,7 +1777,7 @@ int main(int argc, char **argv)
 
             if (view_count == 0) {
                 set_text_color(150, 155, 165);
-                draw_text(face, pixels, 55, 320, "Ничего не найдено");
+                draw_text(face, pixels, 55, 320, "Nothing found");
                 reset_text_color();
             }
 
@@ -1792,8 +1792,8 @@ int main(int argc, char **argv)
                        flags, flag_count, only_locked != 0);
 
             if (achievement_count <= 0) {
-                const char *t1 = "Достижения не подключены";
-                const char *t2 = "Найди игру в Steam — подтянем достижения, иконки и описания";
+                const char *t1 = "Achievements not connected";
+                const char *t2 = "Find this game on Steam to load achievements, icons and descriptions";
 
                 int w1 = measure_text(face, t1);
                 int w2 = measure_text(face_small, t2);
@@ -1811,7 +1811,7 @@ int main(int argc, char **argv)
 
                 set_text_color(242, 247, 255);
                 draw_text(face_small, pixels, 360, 600,
-                          "Импортировать из Steam по названию");
+                          "Import from Steam by name");
                 reset_text_color();
 
                 set_text_color(30, 45, 60);
@@ -1888,7 +1888,7 @@ int main(int argc, char **argv)
                                 date, sizeof(date));
 
                     if (date[0]) {
-                        snprintf(line, sizeof(line), "Получено %s", date);
+                        snprintf(line, sizeof(line), "Earned %s", date);
                         set_text_color(130, 170, 140);
                         draw_text_right(face_small, pixels, 1195, y + 40, line);
                         reset_text_color();
@@ -1924,11 +1924,11 @@ int main(int argc, char **argv)
 
             if (playtime_minutes > 0)
                 snprintf(stats, sizeof(stats),
-                         "Достижения: %d / %d   |   Время в игре: %u ч %u м",
+                         "Achievements: %d / %d   |   Time played: %u h %u m",
                          unlocked_count, achievement_count,
                          playtime_minutes / 60, playtime_minutes % 60);
             else
-                snprintf(stats, sizeof(stats), "Достижения: %d / %d",
+                snprintf(stats, sizeof(stats), "Achievements: %d / %d",
                          unlocked_count, achievement_count);
 
             set_text_color(160, 165, 175);
@@ -1943,7 +1943,7 @@ int main(int argc, char **argv)
 
             char progress[96];
             snprintf(progress, sizeof(progress),
-                     "Получено достижений: %d/%d (%d%%)",
+                     "Achievements unlocked: %d/%d (%d%%)",
                      unlocked_count, achievement_count, percent);
 
             set_text_color(220, 224, 232);
@@ -1958,7 +1958,7 @@ int main(int argc, char **argv)
                 round_rect(pixels, 85, 220, filled, 12, 6, COLOR_ACCENT);
 
             set_text_color(190, 195, 205);
-            draw_text(face_small, pixels, 55, 306, "Только невыполненные");
+            draw_text(face_small, pixels, 55, 306, "Locked only");
             reset_text_color();
 
             draw_toggle(pixels, 1138, 277, toggle_anim);
@@ -1986,7 +1986,7 @@ int main(int argc, char **argv)
             round_rect(pixels, x, y, w, h, 22, RGBA8_MAXALPHA(42, 45, 51));
 
             char head[64];
-            snprintf(head, sizeof(head), "Найдено в Steam: %d",
+            snprintf(head, sizeof(head), "Found on Steam: %d",
                      steam_result_count);
 
             set_text_color(210, 215, 225);
