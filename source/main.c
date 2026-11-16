@@ -1927,15 +1927,6 @@ int main(int argc, char **argv)
                 clip_right = 1010;
                 draw_text(face_small, pixels, 120, y + 26, achievements[index].name);
 
-                if (flag_count <= 0) {
-                    int nw = measure_text(face_small, achievements[index].name);
-
-                    set_text_color(226, 142, 142);
-                    draw_text(face_small, pixels, 120 + nw + 8, y + 26,
-                              L("(added manually)", "(добавлено вручную)"));
-                    reset_text_color();
-                }
-
                 clip_left = 0;
                 clip_right = W;
 
@@ -1981,9 +1972,21 @@ int main(int argc, char **argv)
             else
                 round_rect(pixels, 55, 38, 120, 120, 16, COLOR_PANEL);
 
-            clip_left = 200;
+            int title_x = 200;
+
+            if (achievement_count > 0 && flag_count <= 0) {
+                const char *tag = L("(added manually)", "(добавлено вручную)");
+
+                set_text_color(226, 142, 142);
+                draw_text(face_small, pixels, title_x, 73, tag);
+                reset_text_color();
+
+                title_x += measure_text(face_small, tag) + 12;
+            }
+
+            clip_left = title_x;
             clip_right = W - 40;
-            draw_text(face, pixels, 200, 78, game->name);
+            draw_text(face, pixels, title_x, 78, game->name);
             clip_left = 0;
             clip_right = W;
 
