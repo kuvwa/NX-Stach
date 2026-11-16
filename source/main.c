@@ -34,8 +34,8 @@
 #define GRID_GAP_Y 30
 #define GRID_STEP_X (CARD_W + GRID_GAP_X)
 #define GRID_STEP_Y (CARD_H + GRID_GAP_Y)
-#define GRID_Y0 178
-#define HEADER_H 150
+#define GRID_Y0 188
+#define HEADER_H 168
 
 #define ACH_ICON_SIZE 44
 #define ROW_H 72
