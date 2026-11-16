@@ -112,16 +112,10 @@ int steam_search(const char *term, SteamSearchResult *out, int max_results)
 
 int steam_fetch_achievements(int appid, char *buffer, size_t size)
 {
-    return steam_fetch_achievements_lang(appid, "english", buffer, size);
-}
-
-int steam_fetch_achievements_lang(int appid, const char *language,
-                                  char *buffer, size_t size)
-{
     char path[192];
     snprintf(path, sizeof(path),
-             "/IPlayerService/GetGameAchievements/v1/?appid=%d&language=%s",
-             appid, language ? language : "english");
+             "/IPlayerService/GetGameAchievements/v1/?appid=%d&language=english",
+             appid);
 
     if (!net_https_get("api.steampowered.com", path, buffer, size))
         return -1;

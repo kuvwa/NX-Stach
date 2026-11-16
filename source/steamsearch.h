@@ -16,8 +16,6 @@ int steam_search(const char *term, SteamSearchResult *out, int max_results);
 
 // Скачивает JSON с достижениями. Возвращает длину или -1.
 int steam_fetch_achievements(int appid, char *buffer, size_t size);
-int steam_fetch_achievements_lang(int appid, const char *language,
-                                  char *buffer, size_t size);
 
 // Скачивает иконку достижения (jpeg). Возвращает длину или -1.
 int steam_fetch_icon(int appid, const char *icon_file,
