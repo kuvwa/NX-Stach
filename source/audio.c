@@ -21,8 +21,11 @@ static int dbg_last_id = -1;
 static int dbg_last_rc = 0;
 static int dbg_total = 0;
 
-static AudioOutBuffer out_buf;
-static s16 *out_data = NULL;
+#define PING_PONG 2
+
+static AudioOutBuffer out_buf[PING_PONG];
+static s16 *out_data[PING_PONG];
+static int out_index = 0;
 
 static s16 *samples[SFX_COUNT];
 static size_t sample_frames[SFX_COUNT];
@@ -138,20 +141,24 @@ bool audio_init(void)
         return false;
 
     u32 buffer_size = (u32)((MAX_BYTES + 0xFFF) & ~0xFFF);
-    out_data = memalign(0x1000, buffer_size);
 
-    if (!out_data)
-        return false;
+    for (int i = 0; i < PING_PONG; i++) {
+        out_data[i] = memalign(0x1000, buffer_size);
 
-    memset(out_data, 0, buffer_size);
+        if (!out_data[i])
+            return false;
 
-    memset(&out_buf, 0, sizeof(out_buf));
-    out_buf.next = NULL;
-    out_buf.buffer = out_data;
-    out_buf.buffer_size = buffer_size;
-    out_buf.data_size = 0;
-    out_buf.data_offset = 0;
+        memset(out_data[i], 0, buffer_size);
 
+        memset(&out_buf[i], 0, sizeof(AudioOutBuffer));
+        out_buf[i].next = NULL;
+        out_buf[i].buffer = out_data[i];
+        out_buf[i].buffer_size = buffer_size;
+        out_buf[i].data_size = 0;
+        out_buf[i].data_offset = 0;
+    }
+
+    out_index = 0;
     ready = true;
     return true;
 }
@@ -163,8 +170,10 @@ void audio_exit(void)
     audoutStopAudioOut();
     audoutExit();
 
-    free(out_data);
-    out_data = NULL;
+    for (int i = 0; i < PING_PONG; i++) {
+        free(out_data[i]);
+        out_data[i] = NULL;
+    }
 
     for (int i = 0; i < SFX_COUNT; i++) {
         free(samples[i]);
@@ -174,13 +183,13 @@ void audio_exit(void)
     ready = false;
 }
 
-// Ровно как в примере devkitPro playtone: один буфер, блокирующее проигрывание.
+// Пинг-понг из двух буферов: пока драйвер играет один, готовим второй.
 void audio_play(SfxId id)
 {
     if (!ready || id < 0 || id >= SFX_COUNT)
         return;
 
-    if (!samples[id] || sample_frames[id] == 0 || !out_data)
+    if (!samples[id] || sample_frames[id] == 0)
         return;
 
     size_t bytes = sample_frames[id] * CHANNELS * sizeof(s16);
@@ -188,28 +197,36 @@ void audio_play(SfxId id)
     if (bytes > MAX_BYTES)
         return;
 
-    memcpy(out_data, samples[id], bytes);
+    // забираем всё, что уже отыграло, чтобы очередь не забивалась
+    for (int guard = 0; guard < 8; guard++) {
+        AudioOutBuffer *released = NULL;
+        u32 released_count = 0;
 
-    out_buf.next = NULL;
-    out_buf.buffer = out_data;
-    out_buf.data_size = (u32)bytes;
-    out_buf.data_offset = 0;
+        if (R_FAILED(audoutGetReleasedAudioOutBuffer(&released, &released_count)) ||
+            released_count == 0)
+            break;
+    }
 
-    AudioOutBuffer *released = NULL;
-    Result rc = audoutPlayBuffer(&out_buf, &released);
+    int slot = out_index;
+    out_index = (out_index + 1) % PING_PONG;
+
+    memcpy(out_data[slot], samples[id], bytes);
+
+    out_buf[slot].next = NULL;
+    out_buf[slot].buffer = out_data[slot];
+    out_buf[slot].data_size = (u32)bytes;
+    out_buf[slot].data_offset = 0;
+
+    Result rc = audoutAppendAudioOutBuffer(&out_buf[slot]);
 
     dbg_last_id = (int)id;
     dbg_last_rc = (int)rc;
     dbg_total++;
-
-    if (R_FAILED(rc))
-        log_line("play id=%d rc=0x%08X size=%u\n", (int)id, (unsigned)rc,
-                 (unsigned)bytes);
 }
 
 void audio_update(void)
 {
-    // поток не нужен: проигрывание синхронное
+    // поток не нужен: буферы пинг-понга отдаются сразу
 }
 
 void audio_debug(int *last_id, int *last_rc, int *total)
