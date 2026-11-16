@@ -14,8 +14,6 @@
 #include "library.h"
 #include "history.h"
 #include "recipe.h"
-#include "upload.h"
-#include "steamsearch.h"
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -1310,120 +1308,20 @@ int main(int argc, char **argv)
                 if (kDown & HidNpadButton_Y) {
                     Game *g = &games[view[selected]];
 
-                    GithubConfig cfg;
-                    bool gh = github_load_config(&cfg);
-                    char up_msg[120] = "локально";
+                    draw_progress(&fb, face, face_small, g->name,
+                                  "Выгружаем сейв на карту...", 40);
 
-                    // --- 1. каталог достижений из Steam, если его ещё нет ---
-                    if (!g->steam_appid[0]) {
-                        draw_progress(&fb, face, face_small, g->name,
-                                      "Ищем игру в Steam...", 8);
+                    int copied = gamesave_dump_to_sd(g->title_id);
 
-                        SteamSearchResult results[STEAM_MAX_RESULTS];
-                        int n = steam_search(g->name, results, STEAM_MAX_RESULTS);
-
-                        if (n <= 0) {
-                            snprintf(toast, sizeof(toast),
-                                     "В Steam не нашлось: %s", g->name);
-                            toast_frames = 200;
-                        } else {
-                            int appid = results[0].appid;
-                            char appid_text[32];
-                            snprintf(appid_text, sizeof(appid_text), "%d", appid);
-
-                            draw_progress(&fb, face, face_small, g->name,
-                                          "Скачиваем достижения из Steam...", 18);
-
-                            char *buf = malloc(512 * 1024);
-                            int len = buf ? steam_fetch_achievements(appid, buf,
-                                                                     512 * 1024)
-                                          : -1;
-
-                            if (len > 0) {
-                                mkdir("sdmc:/switch/NX-Stach", 0777);
-                                mkdir("sdmc:/switch/NX-Stach/catalog", 0777);
-
-                                char path[220];
-                                snprintf(path, sizeof(path),
-                                         "sdmc:/switch/NX-Stach/catalog/%s.json",
-                                         appid_text);
-
-                                FILE *f = fopen(path, "wb");
-                                if (f) { fwrite(buf, 1, (size_t)len, f); fclose(f); }
-
-                                SteamAchievement tmp[MAX_ACHIEVEMENTS];
-                                int cnt = steam_parse_achievements(buf, tmp,
-                                                                   MAX_ACHIEVEMENTS);
-
-                                if (cnt > 0) {
-                                    char idir[220];
-                                    snprintf(idir, sizeof(idir),
-                                             "sdmc:/switch/NX-Stach/catalog/icons/%s",
-                                             appid_text);
-                                    mkdir("sdmc:/switch/NX-Stach/catalog/icons", 0777);
-                                    mkdir(idir, 0777);
-
-                                    unsigned char *icon = malloc(256 * 1024);
-
-                                    for (int i = 0; i < cnt; i++) {
-                                        char line[120];
-                                        snprintf(line, sizeof(line),
-                                                 "Иконки %d / %d", i + 1, cnt);
-
-                                        draw_progress(&fb, face, face_small, g->name,
-                                                      line, 18 + 50 * i / cnt);
-
-                                        if (!icon) break;
-
-                                        int got = steam_fetch_icon(appid, tmp[i].icon,
-                                                                   icon, 256 * 1024);
-
-                                        if (got > 0) {
-                                            char ip[340];
-                                            snprintf(ip, sizeof(ip),
-                                                     "sdmc:/switch/NX-Stach/catalog/icons/%s/%.96s.jpg",
-                                                     appid_text, tmp[i].id);
-
-                                            FILE *fi = fopen(ip, "wb");
-                                            if (fi) {
-                                                fwrite(icon, 1, (size_t)got, fi);
-                                                fclose(fi);
-                                            }
-                                        }
-                                    }
-
-                                    free(icon);
-                                }
-
-                                if (gh) {
-                                    GithubConfig c2 = cfg;
-                                    snprintf(c2.path, sizeof(c2.path), "catalog");
-
-                                    char cat_name[48];
-                                    snprintf(cat_name, sizeof(cat_name), "%s.json",
-                                             appid_text);
-
-                                    github_upload_file(&c2, cat_name, buf,
-                                                       up_msg, sizeof(up_msg));
-                                }
-
-                                games_json_set_appid(g->title_id, g->name,
-                                                     appid_text);
-                                snprintf(g->steam_appid, sizeof(g->steam_appid),
-                                         "%s", appid_text);
-
-                                achievement_count = load_catalog(g->steam_appid,
-                                                                 achievements,
-                                                                 MAX_ACHIEVEMENTS);
-                                fill_ach_names(achievements, achievement_count);
-                                ach_icons_load(g->steam_appid, achievement_count,
-                                               achievements);
-                            }
-
-                            free(buf);
-                        }
+                    if (copied > 0) {
+                        snprintf(toast, sizeof(toast),
+                                 "Сейв выгружен: %d файлов (dumps/%016llX)",
+                                 copied, (unsigned long long)g->title_id);
+                    } else {
+                        snprintf(toast, sizeof(toast), "Сейв не найден или пуст");
                     }
 
+                    toast_frames = 260;
                 }
 
                 if (kDown & HidNpadButton_B) {
@@ -1750,7 +1648,7 @@ int main(int argc, char **argv)
             reset_text_color();
 
             {
-                const char *label = "Достижения из Steam";
+                const char *label = "Выгрузить сейв";
                 int lw = measure_text(face_small, label);
                 int bw = lw + 78;
                 int bx = W - 55 - bw;

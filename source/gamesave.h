@@ -34,3 +34,7 @@ const char *gamesave_last_error(void);
 
 // Диагностика: дерево сейва в sdmc:/switch/NX-Stach/save_tree.txt
 void gamesave_dump_tree(u64 title_id);
+
+// Копирует сейв игры на SD: sdmc:/switch/NX-Stach/dumps/<titleid>/
+// Возвращает число скопированных файлов.
+int gamesave_dump_to_sd(u64 title_id);
