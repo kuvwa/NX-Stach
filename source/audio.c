@@ -17,6 +17,10 @@
 
 static bool ready = false;
 
+static int dbg_last_id = -1;
+static int dbg_last_rc = 0;
+static int dbg_total = 0;
+
 static AudioOutBuffer out_buf;
 static s16 *out_data = NULL;
 
@@ -194,6 +198,10 @@ void audio_play(SfxId id)
     AudioOutBuffer *released = NULL;
     Result rc = audoutPlayBuffer(&out_buf, &released);
 
+    dbg_last_id = (int)id;
+    dbg_last_rc = (int)rc;
+    dbg_total++;
+
     if (R_FAILED(rc))
         log_line("play id=%d rc=0x%08X size=%u\n", (int)id, (unsigned)rc,
                  (unsigned)bytes);
@@ -202,4 +210,11 @@ void audio_play(SfxId id)
 void audio_update(void)
 {
     // поток не нужен: проигрывание синхронное
+}
+
+void audio_debug(int *last_id, int *last_rc, int *total)
+{
+    *last_id = dbg_last_id;
+    *last_rc = dbg_last_rc;
+    *total = dbg_total;
 }

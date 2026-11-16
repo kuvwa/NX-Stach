@@ -17,3 +17,6 @@ bool audio_init(void);
 void audio_exit(void);
 void audio_play(SfxId id);
 void audio_update(void);
+
+// Отладка: последний проигранный звук и код возврата.
+void audio_debug(int *last_id, int *last_rc, int *total);

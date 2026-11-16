@@ -1694,6 +1694,18 @@ int main(int argc, char **argv)
         }
 
         audio_update();
+        {
+            int aid = -1, arc = 0, atot = 0;
+            audio_debug(&aid, &arc, &atot);
+
+            char dbg[80];
+            snprintf(dbg, sizeof(dbg), "sfx %d rc %d n %d", aid, arc, atot);
+
+            set_text_color(120, 200, 255);
+            draw_text(face_small, pixels, 8, 20, dbg);
+            reset_text_color();
+        }
+
         framebufferEnd(&fb);
 
         tick++;
