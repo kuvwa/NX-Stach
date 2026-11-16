@@ -1044,6 +1044,91 @@ static u32 *steam_fetch_capsule(int appid)
     return out;
 }
 
+// Подменяет описания на русские (имена остаются английскими).
+static void apply_russian_descriptions(const char *appid,
+                                       SteamAchievement *achievements,
+                                       int count)
+{
+    if (!appid || count <= 0)
+        return;
+
+    char p1[192], p2[192];
+
+    snprintf(p1, sizeof(p1), "sdmc:/switch/NX-Stach/catalog/%.32s_ru.json", appid);
+    snprintf(p2, sizeof(p2), "romfs:/catalog/%.32s_ru.json", appid);
+
+    const char *paths[2] = { p1, p2 };
+
+    for (int k = 0; k < 2; k++) {
+        FILE *f = fopen(paths[k], "rb");
+
+        if (!f) continue;
+
+        fseek(f, 0, SEEK_END);
+        long size = ftell(f);
+        rewind(f);
+
+        if (size <= 0 || size > 262144) { fclose(f); continue; }
+
+        char *buf = malloc((size_t)size + 1);
+
+        if (!buf) { fclose(f); return; }
+
+        size_t got = fread(buf, 1, (size_t)size, f);
+        fclose(f);
+
+        if (got != (size_t)size) { free(buf); continue; }
+
+        buf[size] = '\0';
+
+        json_error_t err;
+        json_t *root = json_loads(buf, 0, &err);
+        free(buf);
+
+        if (!root) continue;
+
+        json_t *resp = json_object_get(root, "response");
+        json_t *arr = resp ? json_object_get(resp, "achievements")
+                           : json_object_get(root, "achievements");
+
+        int replaced = 0;
+
+        if (json_is_array(arr)) {
+            size_t idx;
+            json_t *item;
+
+            json_array_foreach(arr, idx, item) {
+                const char *id = json_string_value(
+                    json_object_get(item, "internal_name"));
+                const char *desc = json_string_value(
+                    json_object_get(item, "localized_desc"));
+
+                if (!id || !desc || !desc[0])
+                    continue;
+
+                for (int i = 0; i < count; i++) {
+                    if (strcmp(achievements[i].id, id) != 0)
+                        continue;
+
+                    size_t len = strlen(desc);
+                    if (len >= sizeof(achievements[i].description))
+                        len = sizeof(achievements[i].description) - 1;
+
+                    memcpy(achievements[i].description, desc, len);
+                    achievements[i].description[len] = '\0';
+                    replaced++;
+                    break;
+                }
+            }
+        }
+
+        json_decref(root);
+
+        if (replaced > 0)
+            return;
+    }
+}
+
 /* --------------------------------- main --------------------------------- */
 
 int main(int argc, char **argv)
@@ -1422,6 +1507,11 @@ int main(int argc, char **argv)
                                            MAX_ACHIEVEMENTS)
                             : 0;
 
+                        if (lang == 1 && achievement_count > 0)
+                            apply_russian_descriptions(game->steam_appid,
+                                                       achievements,
+                                                       achievement_count);
+
                         if (achievement_count <= 0 && net_ready) {
                             char *response = malloc(262144);
 
@@ -1647,6 +1737,29 @@ int main(int argc, char **argv)
                 }
 
                 tmp_count = steam_parse_achievements(json_buf, tmp, MAX_ACHIEVEMENTS);
+
+                // отдельно тянем русские описания
+                char *ru_buf = malloc(512 * 1024);
+
+                if (ru_buf) {
+                    int ru_len = steam_fetch_achievements_lang(appid, "russian",
+                                                               ru_buf, 512 * 1024);
+
+                    if (ru_len > 0) {
+                        char rpath[240];
+                        snprintf(rpath, sizeof(rpath),
+                                 "sdmc:/switch/NX-Stach/catalog/%s_ru.json",
+                                 appid_text);
+
+                        FILE *rf = fopen(rpath, "wb");
+                        if (rf) {
+                            fwrite(ru_buf, 1, (size_t)ru_len, rf);
+                            fclose(rf);
+                        }
+                    }
+
+                    free(ru_buf);
+                }
             }
 
             free(json_buf);
@@ -1687,6 +1800,10 @@ int main(int argc, char **argv)
                 achievement_count = load_catalog(g->steam_appid, achievements,
                                                  MAX_ACHIEVEMENTS);
                 fill_ach_names(achievements, achievement_count);
+
+                if (lang == 1)
+                    apply_russian_descriptions(g->steam_appid, achievements,
+                                               achievement_count);
 
                 flag_count = load_save_flags(g->title_id, g->steam_appid, flags,
                                              MAX_ACHIEVEMENTS);

@@ -1,0 +1,105 @@
+{
+  "appid": "360740",
+  "achievements": [
+    {
+      "internal_name": "beatCavern",
+      "localized_name": "Bye Frogs",
+      "localized_desc": "Beat the first area"
+    },
+    {
+      "internal_name": "beatCatacombs",
+      "localized_name": "Bye Ghosts",
+      "localized_desc": "Beat the second area"
+    },
+    {
+      "internal_name": "beatAquifer",
+      "localized_name": "Bye Squids",
+      "localized_desc": "Beat the third area"
+    },
+    {
+      "internal_name": "beatLimbo",
+      "localized_name": "Bye Stuff",
+      "localized_desc": "Beat the fourth area"
+    },
+    {
+      "internal_name": "beatAbyss",
+      "localized_name": "Bye Well",
+      "localized_desc": "Beat the boss"
+    },
+    {
+      "internal_name": "beatCavernH",
+      "localized_name": "So Many Frogs",
+      "localized_desc": "Beat the first area (hard mode)"
+    },
+    {
+      "internal_name": "beatCatacombsH",
+      "localized_name": "So Many Ghosts",
+      "localized_desc": "Beat the second area (hard mode)"
+    },
+    {
+      "internal_name": "beatAquiferH",
+      "localized_name": "So Many Squids",
+      "localized_desc": "Beat the third area (hard mode)"
+    },
+    {
+      "internal_name": "beatLimboH",
+      "localized_name": "So Much Stuff",
+      "localized_desc": "Beat the fourth area (hard mode)"
+    },
+    {
+      "internal_name": "beatAbyssH",
+      "localized_name": "Well Master",
+      "localized_desc": "Beat the boss (hard mode)"
+    },
+    {
+      "internal_name": "combo10",
+      "localized_name": "Wow Combo",
+      "localized_desc": "Land a 10 combo"
+    },
+    {
+      "internal_name": "combo30",
+      "localized_name": "Whoa Combo",
+      "localized_desc": "Land a 30 combo"
+    },
+    {
+      "internal_name": "combo100",
+      "localized_name": "Sugoi Combo",
+      "localized_desc": "Land a 100 combo"
+    },
+    {
+      "internal_name": "levelNoDamage",
+      "localized_name": "Careful Descent",
+      "localized_desc": "Complete a level without taking damage"
+    },
+    {
+      "internal_name": "levelNoLand",
+      "localized_name": "Ground Allergy",
+      "localized_desc": "Complete a level without landing"
+    },
+    {
+      "internal_name": "levelNoSideroom",
+      "localized_name": "Time Never Stops",
+      "localized_desc": "Complete a level without visiting siderooms"
+    },
+    {
+      "internal_name": "levelNoKill",
+      "localized_name": "Pacifist",
+      "localized_desc": "Complete a level without killing any enemy"
+    },
+    {
+      "internal_name": "levelNoShot",
+      "localized_name": "Mottainai",
+      "localized_desc": "Complete a level without shooting"
+    },
+    {
+      "internal_name": "save3000gem",
+      "localized_name": "Saving Up",
+      "localized_desc": "Have more than 3000 gems"
+    },
+    {
+      "internal_name": "save5000gem",
+      "localized_name": "Frugality",
+      "localized_desc": "Have more than 5000 gems"
+    }
+  ]
+}
