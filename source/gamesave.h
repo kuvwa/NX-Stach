@@ -12,3 +12,6 @@ int gamesave_read_unlocked(u64 title_id, const char *base_path,
                            u8 *flags, int max_flags);
 
 const char *gamesave_last_error(void);
+
+// Диагностика: пишет дерево сейва в sdmc:/switch/NX-Stach/save_tree.txt
+void gamesave_dump_tree(u64 title_id);

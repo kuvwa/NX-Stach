@@ -181,6 +181,47 @@ static int load_from_json(Game *games, int max_games) {
     return count;
 }
 
+
+// Один образ на Switch может содержать несколько игр (например, Hotline Miami
+// Collection). Здесь такие игры разворачиваются в отдельные плитки.
+typedef struct {
+    u64 title_id;
+    const char *label;
+    const char *steam_appid;
+} Variant;
+
+static const Variant VARIANTS[] = {
+    { 0x0100D0E00E51E000ULL, "Hotline Miami", "219150" },
+    { 0x0100D0E00E51E000ULL, "Hotline Miami 2: Wrong Number", "274170" },
+};
+
+static int expand_variants(Game *games, int count, int max_games) {
+    Game out[MAX_GAMES];
+    int n = 0;
+
+    for (int i = 0; i < count && n < max_games; i++) {
+        bool matched = false;
+
+        for (unsigned v = 0; v < sizeof(VARIANTS) / sizeof(VARIANTS[0]); v++) {
+            if (games[i].title_id != VARIANTS[v].title_id) continue;
+            if (n >= max_games) break;
+
+            out[n].title_id = games[i].title_id;
+            snprintf(out[n].name, sizeof(out[n].name), "%s", VARIANTS[v].label);
+            snprintf(out[n].steam_appid, sizeof(out[n].steam_appid), "%s",
+                     VARIANTS[v].steam_appid);
+            n++;
+            matched = true;
+        }
+
+        if (!matched && n < max_games)
+            out[n++] = games[i];
+    }
+
+    memcpy(games, out, sizeof(Game) * (size_t)n);
+    return n;
+}
+
 static int compare_games(const void *a, const void *b) {
     return strcasecmp(((const Game *)a)->name, ((const Game *)b)->name);
 }
@@ -250,6 +291,8 @@ int library_load(Game *games, int max_games) {
         count = load_from_json(games, max_games);
     else
         merge_steam_ids(games, count);
+
+    count = expand_variants(games, count, max_games);
 
     qsort(games, count, sizeof(Game), compare_games);
 
