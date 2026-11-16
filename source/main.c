@@ -30,8 +30,12 @@ static void round_rect(u32 *fb, int x, int y, int w, int h, int r, u32 color)
             int cx = i < r ? r : (i >= w-r ? w-r-1 : i);
             int cy = j < r ? r : (j >= h-r ? h-r-1 : j);
             int dx = i-cx, dy = j-cy;
-            if (dx*dx + dy*dy <= r*r)
-                fb[(y+j)*fb_width+x+i] = color;
+            if (dx*dx + dy*dy <= r*r) {
+                int px = x + i;
+                int py = y + j;
+                if (px >= 0 && px < W && py >= 0 && py < H)
+                    fb[py * fb_width + px] = color;
+            }
         }
 }
 
@@ -207,7 +211,7 @@ static Result scan_user_save_data(u64 target_id, s64 *records_read,
 
                 if (debug) {
                     fprintf(debug,
-                        "TARGET_INDEX %u SYSTEM_SAVE_ID %016llX\\n",
+                        "TARGET_INDEX %u SYSTEM_SAVE_ID %016llX\n",
                         (unsigned)e->save_data_index,
                         (unsigned long long)e->system_save_data_id);
 
@@ -226,7 +230,7 @@ static Result scan_user_save_data(u64 target_id, s64 *records_read,
                         &attr
                     );
 
-                    fprintf(debug, "OPEN_READONLY_RESULT: 0x%08X\\n",
+                    fprintf(debug, "OPEN_READONLY_RESULT: 0x%08X\n",
                             (unsigned)open_rc);
 
                     if (R_SUCCEEDED(open_rc)) {
@@ -237,7 +241,7 @@ static Result scan_user_save_data(u64 target_id, s64 *records_read,
                             &dir
                         );
 
-                        fprintf(debug, "OPEN_ROOT_RESULT: 0x%08X\\n",
+                        fprintf(debug, "OPEN_ROOT_RESULT: 0x%08X\n",
                                 (unsigned)dir_rc);
 
                         if (R_SUCCEEDED(dir_rc)) {
@@ -248,12 +252,12 @@ static Result scan_user_save_data(u64 target_id, s64 *records_read,
                                 &dir, &total, 32, dir_entries
                             );
 
-                            fprintf(debug, "DIR_READ_RESULT: 0x%08X COUNT: %lld\\n",
+                            fprintf(debug, "DIR_READ_RESULT: 0x%08X COUNT: %lld\n",
                                     (unsigned)read_rc, (long long)total);
 
                             if (R_SUCCEEDED(read_rc)) {
                                 for (s64 j = 0; j < total && j < 32; j++) {
-                                    fprintf(debug, "%c %s %lld\\n",
+                                    fprintf(debug, "%c %s %lld\n",
                                         dir_entries[j].type == FsDirEntryType_Dir ? 'D' : 'F',
                                         dir_entries[j].name,
                                         (long long)dir_entries[j].file_size);
@@ -273,7 +277,7 @@ static Result scan_user_save_data(u64 target_id, s64 *records_read,
                                     &subdir
                                 );
 
-                                fprintf(debug, "SUBDIR %s OPEN: 0x%08X\\n",
+                                fprintf(debug, "SUBDIR %s OPEN: 0x%08X\n",
                                         paths[k], (unsigned)sub_rc);
 
                                 if (R_SUCCEEDED(sub_rc)) {
@@ -285,13 +289,13 @@ static Result scan_user_save_data(u64 target_id, s64 *records_read,
                                     );
 
                                     fprintf(debug,
-                                        "SUBDIR_READ: 0x%08X COUNT: %lld\\n",
+                                        "SUBDIR_READ: 0x%08X COUNT: %lld\n",
                                         (unsigned)entries_rc,
                                         (long long)entries_count);
 
                                     if (R_SUCCEEDED(entries_rc)) {
                                         for (s64 n = 0; n < entries_count && n < 32; n++) {
-                                            fprintf(debug, "%c %s %lld\\n",
+                                            fprintf(debug, "%c %s %lld\n",
                                                 entries[n].type == FsDirEntryType_Dir ? 'D' : 'F',
                                                 entries[n].name,
                                                 (long long)entries[n].file_size);
