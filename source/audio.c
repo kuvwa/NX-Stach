@@ -19,6 +19,8 @@ typedef struct {
 } SfxSlot;
 
 static SfxSlot slots[SFX_COUNT];
+static bool slot_free[SFX_COUNT];
+static u64 slot_tick[SFX_COUNT];
 static bool ready = false;
 
 static s16 *samples[SFX_COUNT];
@@ -117,6 +119,11 @@ bool audio_init(void)
         slots[i].buffer.buffer_size = (u32)((MAX_BYTES + 0xFFF) & ~0xFFF);
     }
 
+    for (int i = 0; i < SFX_COUNT; i++) {
+        slot_free[i] = true;
+        slot_tick[i] = 0;
+    }
+
     ready = true;
     return true;
 }
@@ -141,6 +148,9 @@ void audio_exit(void)
     ready = false;
 }
 
+static bool slot_free[SFX_COUNT];
+static u64 slot_tick[SFX_COUNT];
+
 void audio_play(SfxId id)
 {
     if (!ready || id < 0 || id >= SFX_COUNT)
@@ -149,11 +159,31 @@ void audio_play(SfxId id)
     if (!samples[id] || sample_bytes[id] == 0)
         return;
 
-    // у каждого звука свой буфер: другой звук не может его перезаписать
-    bool still_playing = false;
+    // забираем всё, что уже отыграло
+    for (int guard = 0; guard < 32; guard++) {
+        AudioOutBuffer *released = NULL;
+        u32 released_count = 0;
 
-    if (R_SUCCEEDED(audoutContainsAudioOutBuffer(&slots[id].buffer, &still_playing)) &&
-        still_playing)
+        if (R_FAILED(audoutGetReleasedAudioOutBuffer(&released, &released_count)) ||
+            released_count == 0)
+            break;
+
+        for (int i = 0; i < SFX_COUNT; i++) {
+            if (released == (AudioOutBuffer *)&slots[i].buffer)
+                slot_free[i] = true;
+        }
+    }
+
+    // страховка: если драйвер не вернул буфер, освобождаем через 0.5 сек
+    u64 now = armGetSystemTick();
+
+    for (int i = 0; i < SFX_COUNT; i++) {
+        if (!slot_free[i] && armTicksToNs(now - slot_tick[i]) > 500000000ULL) {
+            slot_free[i] = true;
+        }
+    }
+
+    if (!slot_free[id])
         return;
 
     memcpy(slots[id].data, samples[id], sample_bytes[id]);
@@ -161,5 +191,8 @@ void audio_play(SfxId id)
     slots[id].buffer.data_size = (u32)sample_bytes[id];
     slots[id].buffer.data_offset = 0;
 
-    audoutAppendAudioOutBuffer(&slots[id].buffer);
+    if (R_SUCCEEDED(audoutAppendAudioOutBuffer(&slots[id].buffer))) {
+        slot_free[id] = false;
+        slot_tick[id] = now;
+    }
 }
