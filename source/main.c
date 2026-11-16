@@ -26,8 +26,8 @@
 #define GRID_ROWS 2
 #define GRID_X0 55
 #define GRID_STEP_X 245
-#define GRID_Y0 190
-#define GRID_STEP_Y 245
+#define GRID_Y0 175
+#define GRID_STEP_Y 235
 
 #define ACH_ICON_SIZE 44
 
@@ -723,7 +723,7 @@ static void draw_achievements(FT_Face face, FT_Face face_small, u32 *fb,
     if (achievement_count > offset + 5)
         draw_text(face_small, fb, W - 130, 640, "more...");
 
-    draw_text(face_small, fb, 55, 675, "B: Back");
+    draw_text(face_small, fb, W - 165, 675, "B: Back");
 }
 
 /* --------------------------------- main --------------------------------- */
