@@ -13,6 +13,7 @@
 #include "gamesave.h"
 #include "library.h"
 #include "history.h"
+#include "audio.h"
 #include "recipe.h"
 
 #include <ft2build.h>
@@ -940,6 +941,45 @@ static void stick_update(StickRepeat *st, HidAnalogStickState raw,
     }
 }
 
+static void show_splash(Framebuffer *fb, FT_Face face, FT_Face face_small)
+{
+    PadState pad;
+    padInitializeDefault(&pad);
+
+    for (int frame = 0; frame < 135; frame++) {
+        padUpdate(&pad);
+
+        u32 down = padGetButtonsDown(&pad);
+
+        if (frame > 25 && down)
+            break;
+
+        u32 stride;
+        u32 *px = (u32 *)framebufferBegin(fb, &stride);
+        fb_width = stride / sizeof(u32);
+
+        fill_bg(px, COLOR_BG);
+
+        clip_left = 0;
+        clip_right = W;
+        clip_top = 0;
+        clip_bottom = H;
+
+        int tw = measure_text(face, "NX-Stach");
+        draw_text_shine(face, px, (W - tw) / 2, H / 2 - 8, "NX-Stach",
+                        frame * 30);
+
+        const char *sub = "Developed by kuba";
+        int sw = measure_text(face_small, sub);
+
+        set_text_color(112, 118, 130);
+        draw_text(face_small, px, (W - sw) / 2, H / 2 + 42, sub);
+        reset_text_color();
+
+        framebufferEnd(fb);
+    }
+}
+
 /* --------------------------------- main --------------------------------- */
 
 int main(int argc, char **argv)
@@ -981,6 +1021,10 @@ int main(int argc, char **argv)
     Framebuffer fb;
     framebufferCreate(&fb, nwindowGetDefault(), W, H, PIXEL_FORMAT_RGBA_8888, 2);
     framebufferMakeLinear(&fb);
+
+    audio_init();
+
+    show_splash(&fb, face, face_small);
 
     Game games[MAX_GAMES];
     int game_count = library_load(games, MAX_GAMES);
@@ -1145,6 +1189,7 @@ int main(int argc, char **argv)
                 } else if (tap_y >= 276 && tap_y <= 332) {
                     only_locked = !only_locked;
                     list_scroll = list_target = 0.0f;
+                    audio_play(SFX_NAV);
                     consumed = true;
                 }
             }
@@ -1188,10 +1233,12 @@ int main(int argc, char **argv)
                     if (kDown & HidNpadButton_Right) {
                         selected = (selected + 1) % view_count;
                         follow_selection = 1;
+                        audio_play(SFX_NAV);
                     }
                     if (kDown & HidNpadButton_Left) {
                         selected = (selected + view_count - 1) % view_count;
                         follow_selection = 1;
+                        audio_play(SFX_NAV);
                     }
                     if (kDown & HidNpadButton_Down) {
                         int next = selected + GRID_COLS;
@@ -1217,6 +1264,7 @@ int main(int argc, char **argv)
                     if (sx) {
                         selected = (selected + sx + view_count) % view_count;
                         follow_selection = 1;
+                        audio_play(SFX_NAV);
                     }
                     if (sy) {
                         int next = selected - sy * GRID_COLS;
@@ -1224,6 +1272,7 @@ int main(int argc, char **argv)
                         if (next >= 0 && next < view_count) {
                             selected = next;
                             follow_selection = 1;
+                            audio_play(SFX_NAV);
                         }
                     }
                 }
@@ -1302,6 +1351,8 @@ int main(int argc, char **argv)
                     playtime_minutes = game_playtime_minutes(game->title_id);
                     build_header_bg(game->title_id);
 
+                    audio_play(SFX_OK);
+
                     screen = 1;
                 }
             } else if (screen == 1) {
@@ -1310,6 +1361,8 @@ int main(int argc, char **argv)
 
                     draw_progress(&fb, face, face_small, g->name,
                                   "Выгружаем сейв на карту...", 40);
+
+                    audio_play(SFX_OK);
 
                     int copied = gamesave_dump_to_sd(g->title_id);
 
@@ -1327,6 +1380,7 @@ int main(int argc, char **argv)
                 if (kDown & HidNpadButton_B) {
                     screen = 0;
                     ach_icons_clear();
+                    audio_play(SFX_BACK);
                 }
 
                 if (kDown & HidNpadButton_Down) list_target += ROW_H;
@@ -1725,6 +1779,8 @@ int main(int argc, char **argv)
         hover_anim += (1.0f - hover_anim) * 0.22f;
         shine_counter = (u32)(shine_counter + 30);
     }
+
+    audio_exit();
 
     if (net_ready) net_exit();
     ach_icons_clear();
