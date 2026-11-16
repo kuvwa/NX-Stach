@@ -1953,12 +1953,6 @@ int main(int argc, char **argv)
 
             draw_toggle(pixels, 1138, 277, toggle_anim);
 
-            if (achievement_count > 0 && flag_count <= 0) {
-                set_text_color(118, 124, 136);
-                draw_text(face_small, pixels, 55, 712,
-                          "\u0422\u0430\u043f \u043f\u043e \u0434\u043e\u0441\u0442\u0438\u0436\u0435\u043d\u0438\u044e \u2014 \u043e\u0442\u043c\u0435\u0442\u0438\u0442\u044c \u0432\u0440\u0443\u0447\u043d\u0443\u044e");
-                reset_text_color();
-            }
         }
 
         if (steam_mode == 1) {
@@ -2040,13 +2034,6 @@ int main(int argc, char **argv)
                 reset_text_color();
             }
 
-            char foot[96];
-            snprintf(foot, sizeof(foot), "A: импортировать    B: отмена    %d / %d",
-                     steam_selected + 1, steam_result_count);
-
-            set_text_color(140, 145, 155);
-            draw_text(face_small, pixels, x + 28, y + h - 16, foot);
-            reset_text_color();
         }
 
         if (toast_frames > 0) {
