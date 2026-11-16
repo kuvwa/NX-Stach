@@ -1832,7 +1832,9 @@ int main(int argc, char **argv)
                 set_text_color(lang == 0 ? 18 : 190,
                                lang == 0 ? 30 : 195,
                                lang == 0 ? 42 : 205);
-                draw_text(face_small, pixels, rx + 17, ry + 24, "EN");
+                draw_text(face_small, pixels,
+                          rx + (bw - measure_text(face_small, "EN")) / 2,
+                          ry + 24, "EN");
                 reset_text_color();
 
                 round_rect(pixels, rx + bw + 8, ry, bw, bh, 10,
@@ -1840,7 +1842,9 @@ int main(int argc, char **argv)
                 set_text_color(lang == 1 ? 18 : 190,
                                lang == 1 ? 30 : 195,
                                lang == 1 ? 42 : 205);
-                draw_text(face_small, pixels, rx + bw + 25, ry + 24, "RU");
+                draw_text(face_small, pixels,
+                          rx + bw + 8 + (bw - measure_text(face_small, "RU")) / 2,
+                          ry + 24, "RU");
                 reset_text_color();
             }
 
