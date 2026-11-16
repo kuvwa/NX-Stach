@@ -16,3 +16,4 @@ typedef enum {
 bool audio_init(void);
 void audio_exit(void);
 void audio_play(SfxId id);
+void audio_update(void);

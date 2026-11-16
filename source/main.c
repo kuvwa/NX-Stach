@@ -1693,6 +1693,7 @@ int main(int argc, char **argv)
             toast_frames--;
         }
 
+        audio_update();
         framebufferEnd(&fb);
 
         tick++;
