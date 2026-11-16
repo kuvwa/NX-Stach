@@ -1050,6 +1050,35 @@ static u32 *steam_fetch_capsule(int appid)
     return out;
 }
 
+static void show_splash(Framebuffer *fb, FT_Face face, FT_Face face_small)
+{
+    for (int frame = 0; frame < 68; frame++) {
+        u32 stride;
+        u32 *px = (u32 *)framebufferBegin(fb, &stride);
+        fb_width = stride / sizeof(u32);
+
+        fill_bg(px, COLOR_BG);
+
+        clip_left = 0;
+        clip_right = W;
+        clip_top = 0;
+        clip_bottom = H;
+
+        int tw = measure_text(face, "NX-Stach");
+        draw_text_shine(face, px, (W - tw) / 2, H / 2 - 8, "NX-Stach",
+                        frame * 30);
+
+        const char *sub = "Developed by kuba";
+        int sw = measure_text(face_small, sub);
+
+        set_text_color(112, 118, 130);
+        draw_text(face_small, px, (W - sw) / 2, H / 2 + 42, sub);
+        reset_text_color();
+
+        framebufferEnd(fb);
+    }
+}
+
 /* --------------------------------- main --------------------------------- */
 
 int main(int argc, char **argv)
@@ -1091,6 +1120,8 @@ int main(int argc, char **argv)
     Framebuffer fb;
     framebufferCreate(&fb, nwindowGetDefault(), W, H, PIXEL_FORMAT_RGBA_8888, 2);
     framebufferMakeLinear(&fb);
+
+    show_splash(&fb, face, face_small);
 
     Game games[MAX_GAMES];
     int game_count = library_load(games, MAX_GAMES);
