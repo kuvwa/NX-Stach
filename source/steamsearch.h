@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define STEAM_MAX_RESULTS 6
+#define STEAM_MAX_RESULTS 24
 
 typedef struct {
     int appid;

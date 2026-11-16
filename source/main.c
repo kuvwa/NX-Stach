@@ -541,10 +541,17 @@ static void ach_icons_clear(void)
 static u32 *load_achievement_icon(const char *appid, const char *id)
 {
     char path[256];
-    snprintf(path, sizeof(path), "romfs:/catalog/icons/%.32s/%.96s.jpg",
-             appid, id);
 
+    snprintf(path, sizeof(path),
+             "sdmc:/switch/NX-Stach/catalog/icons/%.32s/%.96s.jpg", appid, id);
     FILE *file = fopen(path, "rb");
+
+    if (!file) {
+        snprintf(path, sizeof(path), "romfs:/catalog/icons/%.32s/%.96s.jpg",
+                 appid, id);
+        file = fopen(path, "rb");
+    }
+
     if (!file) return NULL;
 
     if (fseek(file, 0, SEEK_END) != 0) { fclose(file); return NULL; }
@@ -651,10 +658,17 @@ static int load_catalog(const char *appid,
                         SteamAchievement *achievements,
                         int max_achievements)
 {
-    char path[128];
-    snprintf(path, sizeof(path), "romfs:/catalog/%.32s.json", appid);
+    char path[192];
 
+    snprintf(path, sizeof(path),
+             "sdmc:/switch/NX-Stach/catalog/%.32s.json", appid);
     FILE *file = fopen(path, "rb");
+
+    if (!file) {
+        snprintf(path, sizeof(path), "romfs:/catalog/%.32s.json", appid);
+        file = fopen(path, "rb");
+    }
+
     if (!file) return -1;
 
     if (fseek(file, 0, SEEK_END) != 0) { fclose(file); return -1; }
@@ -1398,7 +1412,7 @@ int main(int argc, char **argv)
                         steam_result_count = steam_search(query, steam_results,
                                                           STEAM_MAX_RESULTS);
 
-                        for (int i = 0; i < steam_result_count; i++) {
+                        for (int i = 0; i < steam_result_count && i < 8; i++) {
                             char line[96];
                             snprintf(line, sizeof(line), "Иконка %d / %d",
                                      i + 1, steam_result_count);
@@ -1912,24 +1926,46 @@ int main(int argc, char **argv)
                 }
             }
 
-            int rows = steam_result_count > 0 ? steam_result_count : 1;
-            int w = 760;
-            int h = 110 + rows * 58;
+            const int visible = 8;
+            int rows = steam_result_count < visible ? steam_result_count : visible;
+
+            if (rows < 1) rows = 1;
+
+            int w = 820;
+            int h = 108 + rows * 58;
             int x = (W - w) / 2;
             int y = (H - h) / 2;
 
             round_rect(pixels, x, y, w, h, 22, RGBA8_MAXALPHA(42, 45, 51));
 
+            char head[64];
+            snprintf(head, sizeof(head), "Найдено в Steam: %d",
+                     steam_result_count);
+
             set_text_color(210, 215, 225);
-            draw_text(face_small, pixels, x + 28, y + 44, "Найдено в Steam");
+            draw_text(face_small, pixels, x + 28, y + 42, head);
             reset_text_color();
 
-            for (int i = 0; i < steam_result_count; i++) {
-                int ry = y + 64 + i * 58;
+            int first = (steam_selected / visible) * visible;
+
+            if (first > steam_result_count - visible)
+                first = steam_result_count - visible;
+
+            if (first < 0) first = 0;
+
+            for (int row = 0; row < visible; row++) {
+                int i = first + row;
+
+                if (i >= steam_result_count) break;
+
+                int ry = y + 62 + row * 58;
 
                 if (i == steam_selected)
                     round_rect(pixels, x + 14, ry, w - 28, 50, 12,
                                RGBA8_MAXALPHA(62, 66, 74));
+
+                if (!steam_icons[i])
+                    steam_icons[i] = steam_fetch_capsule(steam_results[i].appid);
 
                 if (steam_icons[i]) {
                     for (int j = 0; j < 44; j++) {
@@ -1961,9 +1997,12 @@ int main(int argc, char **argv)
                 reset_text_color();
             }
 
+            char foot[96];
+            snprintf(foot, sizeof(foot), "A: импортировать    B: отмена    %d / %d",
+                     steam_selected + 1, steam_result_count);
+
             set_text_color(140, 145, 155);
-            draw_text(face_small, pixels, x + 28, y + h - 18,
-                      "A: импортировать    B: отмена");
+            draw_text(face_small, pixels, x + 28, y + h - 16, foot);
             reset_text_color();
         }
 
