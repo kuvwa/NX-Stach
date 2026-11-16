@@ -10,7 +10,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#define CACHE_SLOTS 48
+#define CACHE_SLOTS 24
 #define TITLE_ID_MASK 0xFFFFFFFFFFFFF000ULL
 #define GAMES_JSON "sdmc:/switch/NX-Stach/games.json"
 
@@ -256,19 +256,8 @@ static int compare_games(const void *a, const void *b) {
 // Отсекаем хоумбрю-лончеры, их в списке игр быть не должно.
 static bool looks_like_homebrew(const char *name) {
     static const char *skip[] = {
-        // лончеры и установщики
-        "hbmenu", "Homebrew", "DBI", "Goldleaf", "Awoo", "Tinfoil",
-        "Appstore", "hb-appstore", "NUT", "ftpd", "sys-ftpd",
-        // эмуляторы
-        "PPSSPP", "RetroArch", "melonDS", "mGBA", "DeSmuME", "Dolphin",
-        "Citra", "yuzu", "Skyline", "Strato", "Flycast", "DuckStation",
-        "Snes9x", "FCEUX", "Genesis Plus", "Mednafen", "Vita3K",
-        // утилиты
-        "NX-Shell", "NXThemes", "nx-themes", "EdiZon", "Checkpoint",
-        "JKSV", "Lockpick", "TegraExplorer", "Hekate", "Fizeau",
-        "sys-clk", "Status Monitor", "SimpleModManager", "SwitchPresence",
-        // стриминг
-        "Moonlight", "Chiaki", "PSPlay", "Steam Link",
+        "hbmenu", "Homebrew", "DBI", "Goldleaf", "Atmosphere",
+        "nx-hbmenu", "Awoo", "Tinfoil", "NUT", "ftpd", "sys-ftpd",
     };
 
     if (!name) return true;
@@ -350,19 +339,10 @@ const u32 *library_cover(u64 title_id) {
     if (!read_control(title_id, &actual))
         return NULL;
 
-    if (actual <= sizeof(NacpStruct) ||
-        actual > sizeof(NsApplicationControlData))
-        return NULL;
-
-    size_t icon_len = (size_t)(actual - sizeof(NacpStruct));
-
-    if (icon_len > sizeof(control_buffer->icon))
-        icon_len = sizeof(control_buffer->icon);
-
     int width = 0, height = 0, channels = 0;
 
     stbi_uc *image = stbi_load_from_memory(
-        control_buffer->icon, (int)icon_len,
+        control_buffer->icon, (int)(actual - sizeof(NacpStruct)),
         &width, &height, &channels, 4);
 
     if (!image || width <= 0 || height <= 0) {
@@ -472,16 +452,4 @@ const u32 *library_cover(u64 title_id) {
     last_color = covers[slot].color;
 
     return pixels;
-}
-
-// Только из кэша: ничего не декодирует (безопасно вызывать в кадре).
-const u32 *library_cover_cached(u64 title_id)
-{
-    title_id &= TITLE_ID_MASK;
-
-    for (int i = 0; i < CACHE_SLOTS; i++)
-        if (covers[i].pixels && covers[i].title_id == title_id)
-            return covers[i].pixels;
-
-    return NULL;
 }

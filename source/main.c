@@ -866,6 +866,34 @@ static void build_list(const char *appid, const SteamAchievement *achievements,
     list_total_height = y;
 }
 
+static void draw_progress(Framebuffer *fb, FT_Face face, FT_Face face_small,
+                          const char *title, const char *line, int percent)
+{
+    u32 stride;
+    u32 *px = (u32 *)framebufferBegin(fb, &stride);
+    fb_width = stride / sizeof(u32);
+
+    fill_bg(px, COLOR_BG);
+
+    clip_left = 0;
+    clip_right = W;
+    clip_top = 0;
+    clip_bottom = H;
+
+    draw_text(face, px, 55, 300, title);
+
+    set_text_color(170, 175, 185);
+    draw_text(face_small, px, 55, 340, line);
+    reset_text_color();
+
+    round_rect(px, 55, 370, 1170, 16, 8, COLOR_TRACK);
+
+    if (percent > 0)
+        round_rect(px, 55, 370, 1170 * percent / 100, 16, 8, COLOR_ACCENT);
+
+    framebufferEnd(fb);
+}
+
 /* ------------------------------- стики ------------------------------- */
 
 typedef struct {
@@ -912,66 +940,6 @@ static void stick_update(StickRepeat *st, HidAnalogStickState raw,
     }
 }
 
-static void draw_cover_loading(Framebuffer *fb, FT_Face face, FT_Face face_small,
-                               int done, int total)
-{
-    u32 stride;
-    u32 *px = (u32 *)framebufferBegin(fb, &stride);
-    fb_width = stride / sizeof(u32);
-
-    fill_bg(px, COLOR_BG);
-
-    clip_left = 0;
-    clip_right = W;
-    clip_top = 0;
-    clip_bottom = H;
-
-    draw_text(face, px, 55, 320, "Загрузка обложек...");
-
-    char line[64];
-    snprintf(line, sizeof(line), "%d / %d", done, total);
-
-    set_text_color(170, 175, 185);
-    draw_text(face_small, px, 55, 356, line);
-    reset_text_color();
-
-    round_rect(px, 55, 380, 1170, 14, 7, COLOR_TRACK);
-
-    if (total > 0 && done > 0)
-        round_rect(px, 55, 380, 1170 * done / total, 14, 7, COLOR_ACCENT);
-
-    framebufferEnd(fb);
-}
-
-static void show_splash(Framebuffer *fb, FT_Face face, FT_Face face_small)
-{
-    for (int frame = 0; frame < 68; frame++) {
-        u32 stride;
-        u32 *px = (u32 *)framebufferBegin(fb, &stride);
-        fb_width = stride / sizeof(u32);
-
-        fill_bg(px, COLOR_BG);
-
-        clip_left = 0;
-        clip_right = W;
-        clip_top = 0;
-        clip_bottom = H;
-
-        int tw = measure_text(face, "NX-Stach");
-        draw_text_shine(face, px, (W - tw) / 2, H / 2 - 8, "NX-Stach",
-                        frame * 30);
-
-        const char *sub = "Developed by kuba";
-        int sw = measure_text(face_small, sub);
-
-        set_text_color(112, 118, 130);
-        draw_text(face_small, px, (W - sw) / 2, H / 2 + 42, sub);
-        reset_text_color();
-
-        framebufferEnd(fb);
-    }
-}
-
 /* --------------------------------- main --------------------------------- */
 
 int main(int argc, char **argv)
@@ -1014,24 +982,8 @@ int main(int argc, char **argv)
     framebufferCreate(&fb, nwindowGetDefault(), W, H, PIXEL_FORMAT_RGBA_8888, 2);
     framebufferMakeLinear(&fb);
 
-
-    show_splash(&fb, face, face_small);
-
     Game games[MAX_GAMES];
     int game_count = library_load(games, MAX_GAMES);
-
-    // обложки грузим один раз здесь: в кадре декодирования больше нет
-    for (int i = 0; i < game_count; i++) {
-        // у этой игры битый образ-иконка, покрытие пропускаем
-        if (games[i].title_id == 0x010021C000B6A000ULL)
-            continue;
-
-
-        draw_cover_loading(&fb, face, face_small, i, game_count);
-
-        library_cover(games[i].title_id);
-    }
-
 
     bool romfs_ready = R_SUCCEEDED(romfsInit());
 
@@ -1086,7 +1038,6 @@ int main(int argc, char **argv)
         view[view_count++] = i;
 
     while (appletMainLoop()) {
-
         padUpdate(&pad);
         u32 kDown = padGetButtonsDown(&pad);
         u32 held = padGetButtons(&pad);
@@ -1189,6 +1140,8 @@ int main(int argc, char **argv)
                     screen = 0;
                     ach_icons_clear();
                     consumed = true;
+                } else if (tap_y >= 30 && tap_y <= 78 && tap_x >= 980) {
+                    kDown |= HidNpadButton_Y;
                 } else if (tap_y >= 276 && tap_y <= 332) {
                     only_locked = !only_locked;
                     list_scroll = list_target = 0.0f;
@@ -1349,10 +1302,28 @@ int main(int argc, char **argv)
                     playtime_minutes = game_playtime_minutes(game->title_id);
                     build_header_bg(game->title_id);
 
-
                     screen = 1;
                 }
             } else if (screen == 1) {
+                if (kDown & HidNpadButton_Y) {
+                    Game *g = &games[view[selected]];
+
+                    draw_progress(&fb, face, face_small, g->name,
+                                  "Выгружаем сейв на карту...", 40);
+
+                    int copied = gamesave_dump_to_sd(g->title_id);
+
+                    if (copied > 0) {
+                        snprintf(toast, sizeof(toast),
+                                 "Сейв выгружен: %d файлов (dumps/%016llX)",
+                                 copied, (unsigned long long)g->title_id);
+                    } else {
+                        snprintf(toast, sizeof(toast), "Сейв не найден или пуст");
+                    }
+
+                    toast_frames = 260;
+                }
+
                 if (kDown & HidNpadButton_B) {
                     screen = 0;
                     ach_icons_clear();
@@ -1443,7 +1414,6 @@ int main(int argc, char **argv)
         u32 *pixels = (u32 *)framebufferBegin(&fb, &stride);
         fb_width = stride / sizeof(u32);
 
-
         fill_bg(pixels, COLOR_BG);
         clip_top = 0;
         clip_bottom = H;
@@ -1462,8 +1432,7 @@ int main(int argc, char **argv)
                 if (y > H) continue;
 
                 int game_index = view[i];
-
-                const u32 *cover = library_cover_cached(games[game_index].title_id);
+                const u32 *cover = library_cover(games[game_index].title_id);
 
                 if (i == selected) {
                     u32 glow = library_cover_color(games[game_index].title_id);
@@ -1527,7 +1496,6 @@ int main(int argc, char **argv)
                 }
             }
 
-
             rect(pixels, 0, 0, W, HEADER_H, COLOR_BG);
 
             draw_text_shine(face, pixels, 55, 62, "NX-Stach", (int)shine_counter);
@@ -1559,7 +1527,6 @@ int main(int argc, char **argv)
                            (int)grid_scroll);
         } else if (view_count > 0) {
             const Game *game = &games[view[selected]];
-
 
             build_list(game->steam_appid, achievements, achievement_count,
                        flags, flag_count, only_locked != 0);
@@ -1653,7 +1620,7 @@ int main(int argc, char **argv)
             rect(pixels, 0, 0, W, LIST_TOP - 6, COLOR_BG);
             draw_header_bg(pixels);
 
-            const u32 *cover = library_cover_cached(game->title_id);
+            const u32 *cover = library_cover(game->title_id);
             if (cover)
                 draw_cover(pixels, 55, 38, 120, cover, COLOR_BG, 16);
             else
@@ -1680,6 +1647,23 @@ int main(int argc, char **argv)
             draw_text(face_small, pixels, 200, 110, stats);
             reset_text_color();
 
+            {
+                const char *label = "Выгрузить сейв";
+                int lw = measure_text(face_small, label);
+                int bw = lw + 78;
+                int bx = W - 55 - bw;
+                int by = 34;
+
+                round_rect(pixels, bx, by, bw, 40, 12, COLOR_PANEL);
+
+                round_rect(pixels, bx + 12, by + 8, 24, 24, 12,
+                           RGBA8_MAXALPHA(72, 77, 86));
+
+                set_text_color(236, 241, 250);
+                draw_text(face_small, pixels, bx + 18, by + 26, "Y");
+                draw_text(face_small, pixels, bx + 46, by + 26, label);
+                reset_text_color();
+            }
 
             round_rect(pixels, 55, 176, 1170, 76, 16, COLOR_PANEL);
 
@@ -1731,7 +1715,6 @@ int main(int argc, char **argv)
             toast_frames--;
         }
 
-
         framebufferEnd(&fb);
 
         tick++;
@@ -1742,7 +1725,6 @@ int main(int argc, char **argv)
         hover_anim += (1.0f - hover_anim) * 0.22f;
         shine_counter = (u32)(shine_counter + 30);
     }
-
 
     if (net_ready) net_exit();
     ach_icons_clear();
