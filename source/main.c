@@ -6,6 +6,7 @@
 #include <time.h>
 #include <math.h>
 #include <sys/stat.h>
+#include <sys/stat.h>
 
 #include "steam.h"
 #include "save.h"
@@ -14,6 +15,7 @@
 #include "library.h"
 #include "history.h"
 #include "recipe.h"
+#include "steamsearch.h"
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -912,6 +914,85 @@ static void stick_update(StickRepeat *st, HidAnalogStickState raw,
     }
 }
 
+static void draw_progress(Framebuffer *fb, FT_Face face, FT_Face face_small,
+                          const char *title, const char *line, int percent)
+{
+    u32 stride;
+    u32 *px = (u32 *)framebufferBegin(fb, &stride);
+    fb_width = stride / sizeof(u32);
+
+    fill_bg(px, COLOR_BG);
+
+    clip_left = 0;
+    clip_right = W;
+    clip_top = 0;
+    clip_bottom = H;
+
+    draw_text(face, px, 55, 300, title);
+
+    set_text_color(170, 175, 185);
+    draw_text(face_small, px, 55, 340, line);
+    reset_text_color();
+
+    round_rect(px, 55, 370, 1170, 16, 8, COLOR_TRACK);
+
+    if (percent > 0)
+        round_rect(px, 55, 370, 1170 * percent / 100, 16, 8, COLOR_ACCENT);
+
+    framebufferEnd(fb);
+}
+
+// маленькая иконка игры из Steam (обложка-капсула, центральный кроп 44x44)
+static u32 *steam_fetch_capsule(int appid)
+{
+    char path[192];
+    snprintf(path, sizeof(path),
+             "/store_item_assets/steam/apps/%d/capsule_231x87.jpg", appid);
+
+    unsigned char *buf = malloc(256 * 1024);
+
+    if (!buf)
+        return NULL;
+
+    u32 *out = NULL;
+
+    if (net_https_get("shared.akamai.steamstatic.com", path,
+                      (char *)buf, 256 * 1024)) {
+        size_t len = net_last_body_length();
+        int w = 0, h = 0, c = 0;
+
+        stbi_uc *img = stbi_load_from_memory(buf, (int)len, &w, &h, &c, 4);
+
+        if (img && w > 0 && h > 0) {
+            const int side = 44;
+            int crop = h < w ? h : w;
+            int ox = (w - crop) / 2;
+            int oy = (h - crop) / 2;
+
+            out = malloc((size_t)side * side * sizeof(u32));
+
+            if (out) {
+                for (int y = 0; y < side; y++) {
+                    int sy = oy + y * crop / side;
+
+                    for (int x = 0; x < side; x++) {
+                        int sx = ox + x * crop / side;
+                        const stbi_uc *src = img + ((size_t)sy * w + sx) * 4;
+
+                        out[(size_t)y * side + x] =
+                            RGBA8_MAXALPHA(src[0], src[1], src[2]);
+                    }
+                }
+            }
+        }
+
+        if (img) stbi_image_free(img);
+    }
+
+    free(buf);
+    return out;
+}
+
 /* --------------------------------- main --------------------------------- */
 
 int main(int argc, char **argv)
@@ -980,6 +1061,14 @@ int main(int argc, char **argv)
     int selected = 0;
     int screen = 0;
     int only_locked = 0;
+
+    SteamSearchResult steam_results[STEAM_MAX_RESULTS];
+    int steam_result_count = 0;
+    int steam_selected = 0;
+    int steam_mode = 0;
+    int import_request = 0;
+    u32 *steam_icons[STEAM_MAX_RESULTS];
+
     int follow_selection = 0;
     float hover_anim = 0.0f;
 
@@ -1072,6 +1161,23 @@ int main(int argc, char **argv)
 
         bool consumed = false;
 
+        if (steam_mode == 1) {
+            if (steam_result_count > 0) {
+                if (kDown & HidNpadButton_Down)
+                    steam_selected = (steam_selected + 1) % steam_result_count;
+                if (kDown & HidNpadButton_Up)
+                    steam_selected = (steam_selected + steam_result_count - 1) %
+                                     steam_result_count;
+                if (kDown & HidNpadButton_A)
+                    import_request = 1;
+            }
+
+            if (kDown & HidNpadButton_B)
+                steam_mode = 0;
+
+            consumed = true;
+        }
+
         /* ------------------------------- тапы ------------------------------- */
         if (touch_tapped) {
             if (screen == 0) {
@@ -1112,6 +1218,10 @@ int main(int argc, char **argv)
                     screen = 0;
                     ach_icons_clear();
                     consumed = true;
+                } else if (achievement_count <= 0 &&
+                           tap_x >= 330 && tap_x <= 950 &&
+                           tap_y >= 560 && tap_y <= 624) {
+                    kDown |= HidNpadButton_Y;
                 } else if (tap_y >= 276 && tap_y <= 332) {
                     only_locked = !only_locked;
                     list_scroll = list_target = 0.0f;
@@ -1275,6 +1385,43 @@ int main(int argc, char **argv)
                     screen = 1;
                 }
             } else if (screen == 1) {
+                if ((kDown & HidNpadButton_Y) && achievement_count <= 0) {
+                    Game *g = &games[view[selected]];
+                    char query[96];
+
+                    snprintf(query, sizeof(query), "%s", g->name);
+
+                    if (ask_search(query, sizeof(query)) && query[0]) {
+                        draw_progress(&fb, face, face_small, "Поиск в Steam...",
+                                      query, 25);
+
+                        steam_result_count = steam_search(query, steam_results,
+                                                          STEAM_MAX_RESULTS);
+
+                        for (int i = 0; i < steam_result_count; i++) {
+                            char line[96];
+                            snprintf(line, sizeof(line), "Иконка %d / %d",
+                                     i + 1, steam_result_count);
+
+                            draw_progress(&fb, face, face_small, "Поиск в Steam...",
+                                          line, 30 + 60 * i /
+                                          (steam_result_count ? steam_result_count : 1));
+
+                            free(steam_icons[i]);
+                            steam_icons[i] = steam_fetch_capsule(steam_results[i].appid);
+                        }
+
+                        steam_selected = 0;
+
+                        if (steam_result_count > 0) {
+                            steam_mode = 1;
+                        } else {
+                            snprintf(toast, sizeof(toast), "В Steam ничего не найдено");
+                            toast_frames = 180;
+                        }
+                    }
+                }
+
                 if (kDown & HidNpadButton_B) {
                     screen = 0;
                     ach_icons_clear();
@@ -1358,6 +1505,118 @@ int main(int argc, char **argv)
 
             if (!touch_dragged)
                 list_scroll += (list_target - list_scroll) * 0.14f;
+        }
+
+        /* --------------------------- импорт из Steam --------------------------- */
+        if (import_request && steam_result_count > 0) {
+            import_request = 0;
+            steam_mode = 0;
+
+            Game *g = &games[view[selected]];
+            int appid = steam_results[steam_selected].appid;
+
+            char appid_text[32];
+            snprintf(appid_text, sizeof(appid_text), "%d", appid);
+
+            char title_line[200];
+            snprintf(title_line, sizeof(title_line), "Импорт: %s",
+                     steam_results[steam_selected].name);
+
+            draw_progress(&fb, face, face_small, title_line,
+                          "Скачиваем каталог достижений...", 8);
+
+            char *json_buf = malloc(512 * 1024);
+            int json_len = json_buf
+                ? steam_fetch_achievements(appid, json_buf, 512 * 1024) : -1;
+
+            SteamAchievement tmp[MAX_ACHIEVEMENTS];
+            int tmp_count = 0;
+
+            if (json_len > 0) {
+                mkdir("sdmc:/switch/NX-Stach", 0777);
+                mkdir("sdmc:/switch/NX-Stach/catalog", 0777);
+                mkdir("sdmc:/switch/NX-Stach/catalog/icons", 0777);
+
+                char dir[220];
+                snprintf(dir, sizeof(dir),
+                         "sdmc:/switch/NX-Stach/catalog/icons/%s", appid_text);
+                mkdir(dir, 0777);
+
+                char path[240];
+                snprintf(path, sizeof(path),
+                         "sdmc:/switch/NX-Stach/catalog/%s.json", appid_text);
+
+                FILE *f = fopen(path, "wb");
+                if (f) {
+                    fwrite(json_buf, 1, (size_t)json_len, f);
+                    fclose(f);
+                }
+
+                tmp_count = steam_parse_achievements(json_buf, tmp, MAX_ACHIEVEMENTS);
+            }
+
+            free(json_buf);
+
+            if (tmp_count > 0) {
+                unsigned char *icon = malloc(256 * 1024);
+
+                for (int i = 0; i < tmp_count; i++) {
+                    char line[96];
+                    snprintf(line, sizeof(line), "Иконки %d / %d", i + 1, tmp_count);
+
+                    draw_progress(&fb, face, face_small, title_line, line,
+                                  12 + 80 * i / tmp_count);
+
+                    if (!icon) break;
+
+                    int got = steam_fetch_icon(appid, tmp[i].icon, icon, 256 * 1024);
+
+                    if (got > 0) {
+                        char ipath[340];
+                        snprintf(ipath, sizeof(ipath),
+                                 "sdmc:/switch/NX-Stach/catalog/icons/%s/%.96s.jpg",
+                                 appid_text, tmp[i].id);
+
+                        FILE *fi = fopen(ipath, "wb");
+                        if (fi) {
+                            fwrite(icon, 1, (size_t)got, fi);
+                            fclose(fi);
+                        }
+                    }
+                }
+
+                free(icon);
+
+                games_json_set_appid(g->title_id, g->name, appid_text);
+                snprintf(g->steam_appid, sizeof(g->steam_appid), "%s", appid_text);
+
+                achievement_count = load_catalog(g->steam_appid, achievements,
+                                                 MAX_ACHIEVEMENTS);
+                fill_ach_names(achievements, achievement_count);
+
+                flag_count = load_save_flags(g->title_id, g->steam_appid, flags,
+                                             MAX_ACHIEVEMENTS);
+
+                unlocked_count = 0;
+                for (int i = 0; i < achievement_count; i++)
+                    if (achievement_unlocked(g->steam_appid, i, &achievements[i],
+                                             flags, flag_count))
+                        unlocked_count++;
+
+                ach_icons_load(g->steam_appid, achievement_count, achievements);
+                playtime_minutes = game_playtime_minutes(g->title_id);
+                build_header_bg(g->title_id);
+
+                list_scroll = list_target = 0.0f;
+                only_locked = 0;
+
+                snprintf(toast, sizeof(toast), "Импортировано: %d достижений",
+                         achievement_count);
+                toast_frames = 200;
+            } else {
+                snprintf(toast, sizeof(toast), "Не удалось скачать достижения");
+                toast_frames = 200;
+            }
         }
 
         /* ------------------------------ отрисовка ------------------------------ */
@@ -1483,12 +1742,30 @@ int main(int argc, char **argv)
                        flags, flag_count, only_locked != 0);
 
             if (achievement_count <= 0) {
-                set_text_color(150, 155, 165);
-                draw_text(face_small, pixels, 55, 410, "Нет каталога достижений");
-                draw_text(face_small, pixels, 55, 440,
-                          game->steam_appid[0]
-                          ? "Проверь romfs:/catalog/ и Steam AppID"
-                          : "У игры не указан Steam AppID");
+                const char *t1 = "Достижения не подключены";
+                const char *t2 = "Найди игру в Steam — подтянем достижения, иконки и описания";
+
+                int w1 = measure_text(face, t1);
+                int w2 = measure_text(face_small, t2);
+
+                set_text_color(225, 230, 240);
+                draw_text(face, pixels, (W - w1) / 2, 470, t1);
+                reset_text_color();
+
+                set_text_color(140, 146, 158);
+                draw_text(face_small, pixels, (W - w2) / 2, 505, t2);
+                reset_text_color();
+
+                round_rect(pixels, 330, 560, 620, 64, 16,
+                           blend_px(COLOR_BG, COLOR_ACCENT, 110));
+
+                set_text_color(242, 247, 255);
+                draw_text(face_small, pixels, 360, 600,
+                          "Импортировать из Steam по названию");
+                reset_text_color();
+
+                set_text_color(30, 45, 60);
+                draw_text(face_small, pixels, 916, 600, "Y");
                 reset_text_color();
             }
 
@@ -1627,6 +1904,69 @@ int main(int argc, char **argv)
             draw_toggle(pixels, 1138, 277, toggle_anim);
         }
 
+        if (steam_mode == 1) {
+            for (int py = 0; py < H; py++) {
+                for (int px = 0; px < W; px++) {
+                    u32 *dst = &pixels[(size_t)py * fb_width + px];
+                    *dst = blend_px(*dst, RGBA8_MAXALPHA(0, 0, 0), 150);
+                }
+            }
+
+            int rows = steam_result_count > 0 ? steam_result_count : 1;
+            int w = 760;
+            int h = 110 + rows * 58;
+            int x = (W - w) / 2;
+            int y = (H - h) / 2;
+
+            round_rect(pixels, x, y, w, h, 22, RGBA8_MAXALPHA(42, 45, 51));
+
+            set_text_color(210, 215, 225);
+            draw_text(face_small, pixels, x + 28, y + 44, "Найдено в Steam");
+            reset_text_color();
+
+            for (int i = 0; i < steam_result_count; i++) {
+                int ry = y + 64 + i * 58;
+
+                if (i == steam_selected)
+                    round_rect(pixels, x + 14, ry, w - 28, 50, 12,
+                               RGBA8_MAXALPHA(62, 66, 74));
+
+                if (steam_icons[i]) {
+                    for (int j = 0; j < 44; j++) {
+                        int py = ry + 3 + j;
+                        if (py < 0 || py >= H) continue;
+
+                        for (int k = 0; k < 44; k++) {
+                            int px = x + 24 + k;
+                            if (px < 0 || px >= W) continue;
+
+                            pixels[(size_t)py * fb_width + px] =
+                                steam_icons[i][(size_t)j * 44 + k];
+                        }
+                    }
+                } else {
+                    round_rect(pixels, x + 24, ry + 3, 44, 44, 8,
+                               RGBA8_MAXALPHA(32, 34, 38));
+                }
+
+                if (i == steam_selected) set_text_color(240, 245, 252);
+                else set_text_color(185, 190, 200);
+
+                clip_left = x + 82;
+                clip_right = x + w - 20;
+                draw_text(face_small, pixels, x + 82, ry + 31,
+                          steam_results[i].name);
+                clip_left = 0;
+                clip_right = W;
+                reset_text_color();
+            }
+
+            set_text_color(140, 145, 155);
+            draw_text(face_small, pixels, x + 28, y + h - 18,
+                      "A: импортировать    B: отмена");
+            reset_text_color();
+        }
+
         if (toast_frames > 0) {
             int tw = measure_text(face_small, toast);
             int w = tw + 48;
@@ -1642,6 +1982,28 @@ int main(int argc, char **argv)
             clip_right = x + w - 20;
             set_text_color(235, 240, 250);
             draw_text(face_small, pixels, x + 24, y + 30, toast);
+            reset_text_color();
+            clip_left = 0;
+            clip_right = W;
+
+            toast_frames--;
+        }
+
+        if (toast_frames > 0) {
+            int tw = measure_text(face_small, toast);
+            int bw = tw + 48;
+
+            if (bw > W - 80) bw = W - 80;
+
+            int bx = (W - bw) / 2;
+            int by = H - 92;
+
+            round_rect(pixels, bx, by, bw, 44, 14, RGBA8_MAXALPHA(52, 56, 63));
+
+            clip_left = bx + 20;
+            clip_right = bx + bw - 20;
+            set_text_color(235, 240, 250);
+            draw_text(face_small, pixels, bx + 24, by + 29, toast);
             reset_text_color();
             clip_left = 0;
             clip_right = W;
