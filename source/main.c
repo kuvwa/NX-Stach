@@ -912,57 +912,6 @@ static void stick_update(StickRepeat *st, HidAnalogStickState raw,
     }
 }
 
-static void show_splash(Framebuffer *fb, FT_Face face, FT_Face face_small)
-{
-    for (int frame = 0; frame < 68; frame++) {
-        u32 stride;
-        u32 *px = (u32 *)framebufferBegin(fb, &stride);
-        fb_width = stride / sizeof(u32);
-
-        fill_bg(px, COLOR_BG);
-
-        clip_left = 0;
-        clip_right = W;
-        clip_top = 0;
-        clip_bottom = H;
-
-        int tw = measure_text(face, "NX-Stach");
-        draw_text_shine(face, px, (W - tw) / 2, H / 2 - 8, "NX-Stach",
-                        frame * 30);
-
-        const char *sub = "Developed by kuba";
-        int sw = measure_text(face_small, sub);
-
-        set_text_color(112, 118, 130);
-        draw_text(face_small, px, (W - sw) / 2, H / 2 + 42, sub);
-        reset_text_color();
-
-        framebufferEnd(fb);
-    }
-}
-
-static const char *g_stage = "init";
-static int g_detail = -1;
-static unsigned long long g_detail_id = 0;
-
-static void beat(const char *stage, int detail)
-{
-    g_stage = stage;
-    g_detail = detail;
-}
-
-static void beat_flush(void)
-{
-
-    FILE *f = fopen("sdmc:/switch/NX-Stach/last_frame.txt", "w");
-
-    if (!f) return;
-
-    fprintf(f, "stage=%s detail=%d id=%016llX\n", g_stage, g_detail,
-            g_detail_id);
-    fclose(f);
-}
-
 static void draw_cover_loading(Framebuffer *fb, FT_Face face, FT_Face face_small,
                                int done, int total)
 {
@@ -992,6 +941,35 @@ static void draw_cover_loading(Framebuffer *fb, FT_Face face, FT_Face face_small
         round_rect(px, 55, 380, 1170 * done / total, 14, 7, COLOR_ACCENT);
 
     framebufferEnd(fb);
+}
+
+static void show_splash(Framebuffer *fb, FT_Face face, FT_Face face_small)
+{
+    for (int frame = 0; frame < 68; frame++) {
+        u32 stride;
+        u32 *px = (u32 *)framebufferBegin(fb, &stride);
+        fb_width = stride / sizeof(u32);
+
+        fill_bg(px, COLOR_BG);
+
+        clip_left = 0;
+        clip_right = W;
+        clip_top = 0;
+        clip_bottom = H;
+
+        int tw = measure_text(face, "NX-Stach");
+        draw_text_shine(face, px, (W - tw) / 2, H / 2 - 8, "NX-Stach",
+                        frame * 30);
+
+        const char *sub = "Developed by kuba";
+        int sw = measure_text(face_small, sub);
+
+        set_text_color(112, 118, 130);
+        draw_text(face_small, px, (W - sw) / 2, H / 2 + 42, sub);
+        reset_text_color();
+
+        framebufferEnd(fb);
+    }
 }
 
 /* --------------------------------- main --------------------------------- */
@@ -1044,19 +1022,16 @@ int main(int argc, char **argv)
 
     // обложки грузим один раз здесь: в кадре декодирования больше нет
     for (int i = 0; i < game_count; i++) {
-        g_detail_id = (unsigned long long)games[i].title_id;
-        beat("cover", i);
+        // у этой игры битый образ-иконка, покрытие пропускаем
+        if (games[i].title_id == 0x010021C000B6A000ULL)
+            continue;
 
-        if ((i % 2) == 0)
-            beat_flush();
 
         draw_cover_loading(&fb, face, face_small, i, game_count);
 
         library_cover(games[i].title_id);
     }
 
-    beat("cover_done", game_count);
-    beat_flush();
 
     bool romfs_ready = R_SUCCEEDED(romfsInit());
 
@@ -1111,7 +1086,6 @@ int main(int argc, char **argv)
         view[view_count++] = i;
 
     while (appletMainLoop()) {
-        beat("input", 0);
 
         padUpdate(&pad);
         u32 kDown = padGetButtonsDown(&pad);
@@ -1469,7 +1443,6 @@ int main(int argc, char **argv)
         u32 *pixels = (u32 *)framebufferBegin(&fb, &stride);
         fb_width = stride / sizeof(u32);
 
-        beat("clear", 0);
 
         fill_bg(pixels, COLOR_BG);
         clip_top = 0;
@@ -1490,11 +1463,6 @@ int main(int argc, char **argv)
 
                 int game_index = view[i];
 
-                g_detail_id = (unsigned long long)games[game_index].title_id;
-                beat("tile", i);
-
-                if ((i % 3) == 0 || i == selected)
-                    beat_flush();
                 const u32 *cover = library_cover_cached(games[game_index].title_id);
 
                 if (i == selected) {
@@ -1559,7 +1527,6 @@ int main(int argc, char **argv)
                 }
             }
 
-            beat("header", 0);
 
             rect(pixels, 0, 0, W, HEADER_H, COLOR_BG);
 
@@ -1593,7 +1560,6 @@ int main(int argc, char **argv)
         } else if (view_count > 0) {
             const Game *game = &games[view[selected]];
 
-            beat("ach_list", 0);
 
             build_list(game->steam_appid, achievements, achievement_count,
                        flags, flag_count, only_locked != 0);
@@ -1765,8 +1731,6 @@ int main(int argc, char **argv)
             toast_frames--;
         }
 
-        beat("present", 0);
-        beat_flush();
 
         framebufferEnd(&fb);
 
