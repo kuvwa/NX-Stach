@@ -1576,7 +1576,7 @@ int main(int argc, char **argv)
 
                 for (int i = 0; i < tmp_count; i++) {
                     char line[96];
-                    snprintf(line, sizeof(line), "Иконки %d / %d", i + 1, tmp_count);
+                    snprintf(line, sizeof(line), "Загрузка... %d / %d", i + 1, tmp_count);
 
                     draw_progress(&fb, face, face_small, title_line, line,
                                   12 + 80 * i / tmp_count);
