@@ -18,4 +18,5 @@ typedef struct {
 
 // Сканирует сейв игры и пытается найти флаги достижений.
 // expected_count — сколько достижений в каталоге Steam.
-ScanResult scan_save_for_achievements(u64 title_id, int expected_count);
+ScanResult scan_save_for_achievements(u64 title_id, int expected_count,
+                                      const char **names, int name_count);

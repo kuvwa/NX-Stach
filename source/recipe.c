@@ -102,10 +102,15 @@ void recipe_delete(u64 title_id, const char *appid)
     remove(path);
 }
 
-int recipe_read_flags(const Recipe *r, u8 *flags, int max_flags)
+int recipe_read_flags(const Recipe *r, const char **names, int name_count,
+                      u8 *flags, int max_flags)
 {
     if (!r || !r->valid)
         return -1;
+
+    if (r->format == 2)
+        return gamesave_read_named(r->title_id, r->file_path, names, name_count,
+                                   r->offset, flags, max_flags);
 
     return gamesave_read_block(r->title_id, r->file_path, r->marker,
                                r->offset, r->skip, r->format,

@@ -22,5 +22,7 @@ bool recipe_load(u64 title_id, const char *appid, Recipe *out);
 bool recipe_save(const Recipe *r);
 void recipe_delete(u64 title_id, const char *appid);
 
-// Читает флаги по рецепту. Возвращает число флагов или -1.
-int recipe_read_flags(const Recipe *r, u8 *flags, int max_flags);
+// Читает флаги по рецепту. names — внутренние имена достижений
+// (нужны для формата 2 «по именам»). Возвращает число флагов или -1.
+int recipe_read_flags(const Recipe *r, const char **names, int name_count,
+                      u8 *flags, int max_flags);

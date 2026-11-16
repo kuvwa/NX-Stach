@@ -252,6 +252,69 @@ int gamesave_read_block(u64 title_id, const char *file_path, const char *marker,
     return count > 0 ? count : -1;
 }
 
+int gamesave_read_named(u64 title_id, const char *file_path,
+                        const char **names, int name_count,
+                        int window, u8 *flags, int max_flags)
+{
+    last_error = "NOT_STARTED";
+
+    if (!file_path || !names || name_count <= 0 || !flags)
+        return -1;
+
+    if (window <= 0) window = 96;
+
+    FsFileSystem fs;
+
+    if (!gamesave_open(title_id, &fs))
+        return -1;
+
+    size_t size = 0;
+    u8 *data = gamesave_read_file(&fs, file_path, &size);
+
+    gamesave_close(&fs);
+
+    if (!data)
+        return -1;
+
+    int found = 0;
+
+    for (int i = 0; i < name_count && i < max_flags; i++) {
+        const char *name = names[i];
+
+        if (!name || !name[0]) continue;
+
+        size_t nlen = strlen(name);
+        size_t pos = (size_t)-1;
+
+        for (size_t k = 0; k + nlen < size; k++) {
+            if (memcmp(data + k, name, nlen) == 0) {
+                pos = k + nlen;
+                break;
+            }
+        }
+
+        if (pos == (size_t)-1) {
+            flags[i] = 0;
+            continue;
+        }
+
+        int value = 0;
+
+        for (size_t k = pos; k < pos + (size_t)window && k < size; k++) {
+            if (data[k] == 1 || data[k] == '1') { value = 1; break; }
+            if (data[k] == 0 || data[k] == '0') { value = 0; break; }
+        }
+
+        flags[i] = (u8)value;
+        found++;
+    }
+
+    free(data);
+
+    last_error = found > 0 ? "OK" : "PARSE";
+    return found > 0 ? name_count : -1;
+}
+
 int gamesave_read_unlocked(u64 title_id, const char *base_path,
                            u8 *flags, int max_flags)
 {

@@ -20,6 +20,12 @@ int gamesave_read_block(u64 title_id, const char *file_path, const char *marker,
                         int offset, int skip, int format,
                         u8 *flags, int max_flags);
 
+// Формат «по именам»: ищет название достижения и рядом байт 0/1.
+// offset — окно поиска после имени.
+int gamesave_read_named(u64 title_id, const char *file_path,
+                        const char **names, int name_count,
+                        int window, u8 *flags, int max_flags);
+
 // Старое поведение (Hotline Miami), оставлено для совместимости.
 int gamesave_read_unlocked(u64 title_id, const char *base_path,
                            u8 *flags, int max_flags);

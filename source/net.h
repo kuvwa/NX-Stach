@@ -15,3 +15,5 @@ const char *net_last_error(void);
 bool net_https_request(const char *host, const char *method, const char *path,
                        const char *content_type, const char *body,
                        size_t body_len, char *response, size_t response_size);
+
+size_t net_last_body_length(void);
