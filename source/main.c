@@ -14,7 +14,6 @@
 #include "library.h"
 #include "history.h"
 #include "recipe.h"
-#include "scanner.h"
 #include "upload.h"
 #include "steamsearch.h"
 
@@ -1425,86 +1424,6 @@ int main(int argc, char **argv)
                         }
                     }
 
-                    // --- 2. ищем, как читать прогресс из сейва ---
-                    if (achievement_count > 0) {
-                        draw_progress(&fb, face, face_small, g->name,
-                                      "Сканируем сейв игры...", 72);
-
-                        ScanResult sr = scan_save_for_achievements(g->title_id,
-                                                                   achievement_count,
-                                                                   g_ach_names,
-                                                                   g_ach_name_count);
-
-                        if (sr.found) {
-                            Recipe r;
-                            memset(&r, 0, sizeof(r));
-
-                            r.title_id = g->title_id;
-                            snprintf(r.steam_appid, sizeof(r.steam_appid), "%s",
-                                     g->steam_appid);
-                            snprintf(r.file_path, sizeof(r.file_path), "%s",
-                                     sr.file_path);
-                            snprintf(r.marker, sizeof(r.marker), "%s", sr.marker);
-                            r.offset = sr.offset;
-                            r.skip = sr.skip;
-                            r.format = sr.format;
-                            r.count = achievement_count;
-                            r.valid = true;
-
-                            recipe_save(&r);
-
-                            flag_count = load_save_flags(g->title_id,
-                                                         g->steam_appid, flags,
-                                                         MAX_ACHIEVEMENTS);
-
-                            unlocked_count = 0;
-                            for (int i = 0; i < achievement_count; i++)
-                                if (achievement_unlocked(g->steam_appid, i,
-                                                         &achievements[i],
-                                                         flags, flag_count))
-                                    unlocked_count++;
-
-                            char json[640];
-                            snprintf(json, sizeof(json),
-                                "{\n"
-                                "  \"title_id\": \"%016llX\",\n"
-                                "  \"steam_appid\": \"%s\",\n"
-                                "  \"file_path\": \"%s\",\n"
-                                "  \"marker\": \"%s\",\n"
-                                "  \"offset\": %d,\n"
-                                "  \"skip\": %d,\n"
-                                "  \"format\": %d,\n"
-                                "  \"count\": %d,\n"
-                                "  \"verified\": true,\n"
-                                "  \"source\": \"nx-stach-scanner\",\n"
-                                "  \"created\": %llu\n"
-                                "}\n",
-                                (unsigned long long)g->title_id,
-                                g->steam_appid,
-                                sr.file_path, sr.marker,
-                                sr.offset, sr.skip, sr.format,
-                                achievement_count,
-                                (unsigned long long)time(NULL));
-
-                            char name[64];
-                            snprintf(name, sizeof(name), "%016llX_%s.json",
-                                     (unsigned long long)g->title_id,
-                                     g->steam_appid);
-
-                            char rmsg[120] = "локально";
-
-                            if (gh)
-                                github_upload_file(&cfg, name, json,
-                                                   rmsg, sizeof(rmsg));
-
-                            snprintf(toast, sizeof(toast), "%s. Рецепт: %s",
-                                     sr.note, rmsg);
-                            toast_frames = 300;
-                        } else {
-                            snprintf(toast, sizeof(toast), "%s", sr.note);
-                            toast_frames = 220;
-                        }
-                    }
                 }
 
                 if (kDown & HidNpadButton_B) {
@@ -1831,7 +1750,7 @@ int main(int argc, char **argv)
             reset_text_color();
 
             {
-                const char *label = "Сканировать сейв";
+                const char *label = "Достижения из Steam";
                 int lw = measure_text(face_small, label);
                 int bw = lw + 78;
                 int bx = W - 55 - bw;
