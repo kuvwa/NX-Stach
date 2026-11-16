@@ -454,12 +454,13 @@ static int dump_copy(FsFileSystem *fs, const char *src_dir, const char *dst_dir,
     return files;
 }
 
+// Перечисляет ВСЕ сейв-контейнеры игры и копирует каждый на SD.
 int gamesave_dump_to_sd(u64 title_id)
 {
-    FsFileSystem fs;
+    FsSaveDataInfoReader reader;
 
-    if (!gamesave_open(title_id, &fs)) {
-        last_error = "SAVE_OPEN";
+    if (R_FAILED(fsOpenSaveDataInfoReader(&reader, FsSaveDataSpaceId_All))) {
+        last_error = "INFO_READER";
         return -1;
     }
 
@@ -472,11 +473,56 @@ int gamesave_dump_to_sd(u64 title_id)
 
     mkdir(root, 0777);
 
+    FsSaveDataInfo entries[64];
     int count = 0;
-    dump_copy(&fs, "", root, 0, &count);
+    int containers = 0;
 
-    gamesave_close(&fs);
+    for (int page = 0; page < 64; page++) {
+        s64 got = 0;
+
+        if (R_FAILED(fsSaveDataInfoReaderRead(&reader, entries, 64, &got)) || got <= 0)
+            break;
+
+        for (s64 i = 0; i < got; i++) {
+            if (entries[i].application_id != title_id)
+                continue;
+
+            FsSaveDataAttribute attr;
+            memset(&attr, 0, sizeof(attr));
+
+            attr.application_id = entries[i].application_id;
+            attr.uid = entries[i].uid;
+            attr.save_data_type = entries[i].save_data_type;
+            attr.save_data_rank = entries[i].save_data_rank;
+            attr.save_data_index = entries[i].save_data_index;
+            attr.system_save_data_id = entries[i].system_save_data_id;
+
+            FsFileSystem fs;
+
+            if (R_FAILED(fsOpenReadOnlySaveDataFileSystem(
+                    &fs, (FsSaveDataSpaceId)entries[i].save_data_space_id, &attr)))
+                continue;
+
+            char dir[280];
+            snprintf(dir, sizeof(dir), "%s/%016llX", root,
+                     (unsigned long long)entries[i].save_data_id);
+
+            mkdir(dir, 0777);
+
+            dump_copy(&fs, "", dir, 0, &count);
+
+            fsFsClose(&fs);
+            containers++;
+        }
+
+        if (got < 64) break;
+    }
+
+    fsSaveDataInfoReaderClose(&reader);
 
     last_error = count > 0 ? "OK" : "EMPTY";
+
+    if (count == 0) return -1;
+
     return count;
 }
