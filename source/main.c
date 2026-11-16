@@ -6,6 +6,7 @@
 #include "save.h"
 #include "net.h"
 #include "gamesave.h"
+#include "library.h"
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
@@ -38,6 +39,18 @@ static void round_rect(u32 *fb, int x, int y, int w, int h, int r, u32 color)
                     fb[py * fb_width + px] = color;
             }
         }
+}
+
+static void draw_cover(u32 *fb, int x, int y, const u32 *cover)
+{
+    for (int j = 0; j < LIB_COVER_H; j++) {
+        int py = y + j;
+        if (py < 0 || py >= H) continue;
+        if (x < 0 || x + LIB_COVER_W > W) continue;
+        memcpy(fb + (size_t)py * fb_width + x,
+               cover + (size_t)j * LIB_COVER_W,
+               LIB_COVER_W * sizeof(u32));
+    }
 }
 
 static void draw_text(FT_Face face, u32 *fb, int x, int y, const char *str)
@@ -110,25 +123,34 @@ static int measure_text(FT_Face face, const char *str)
 #define MAX_ACHIEVEMENTS 100
 
 // Какие игры умеем читать из их сейва на консоли.
+// flag_offset: в сейве Hotline Miami массив флагов начинается с технического id 256,
+// поэтому достижение i лежит во флаге i+1.
 typedef struct {
     const char *appid;
     u64 title_id;
     const char *save_path;
+    int flag_offset;
 } SaveSource;
 
 static const SaveSource SAVE_SOURCES[] = {
-    { "219150", 0x0100D0E00E51E000ULL, "/HotlineMiami" },
+    { "219150", 0x0100D0E00E51E000ULL, "/HotlineMiami", 1 },
 };
+
+static int save_flag_offset = 0;
 
 static int load_save_flags(const char *appid, u8 *flags, int max_flags)
 {
     if (!appid) return -1;
 
+    save_flag_offset = 0;
+
     for (unsigned i = 0; i < sizeof(SAVE_SOURCES) / sizeof(SAVE_SOURCES[0]); i++) {
-        if (strcmp(SAVE_SOURCES[i].appid, appid) == 0)
+        if (strcmp(SAVE_SOURCES[i].appid, appid) == 0) {
+            save_flag_offset = SAVE_SOURCES[i].flag_offset;
             return gamesave_read_unlocked(SAVE_SOURCES[i].title_id,
                                           SAVE_SOURCES[i].save_path,
                                           flags, max_flags);
+        }
     }
 
     return -1;
@@ -138,8 +160,10 @@ static bool achievement_unlocked(const char *appid, int index,
                                  const SteamAchievement *achievement,
                                  const u8 *flags, int flag_count)
 {
-    if (flag_count > 0)
-        return index < flag_count && flags[index] != 0;
+    if (flag_count > 0) {
+        int slot = index + save_flag_offset;
+        return slot >= 0 && slot < flag_count && flags[slot] != 0;
+    }
 
     return save_is_unlocked(appid, achievement->id);
 }
@@ -454,15 +478,8 @@ int main(int argc, char **argv)
     framebufferCreate(&fb, nwindowGetDefault(), W, H, PIXEL_FORMAT_RGBA_8888, 2);
     framebufferMakeLinear(&fb);
 
-    const char *test_json =
-        "{\"response\":{\"games\":["
-        "{\"appid\":219150,\"name\":\"Hotline Miami\",\"playtime_forever\":0},"
-        "{\"appid\":274170,\"name\":\"Hotline Miami 2: Wrong Number\",\"playtime_forever\":0}"
-        "]}}";
-
-    SteamGame games[2] = {0};
-    int game_count = steam_parse_games(test_json, games, 2);
-    if (game_count <= 0) return 1;
+    Game games[MAX_GAMES];
+    int game_count = library_load(games, MAX_GAMES);
 
     bool romfs_ready = R_SUCCEEDED(romfsInit());
     bool save_ready = save_init();
@@ -471,9 +488,11 @@ int main(int argc, char **argv)
     char sync_status[128] = "Not synchronized";
 
     SteamAchievement achievements[MAX_ACHIEVEMENTS] = {0};
-    int achievement_count = romfs_ready
-        ? load_catalog("219150", achievements, MAX_ACHIEVEMENTS)
-        : -1;
+    int achievement_count = -1;
+
+    if (romfs_ready && game_count > 0 && games[0].steam_appid[0])
+        achievement_count = load_catalog(games[0].steam_appid,
+                                         achievements, MAX_ACHIEVEMENTS);
 
     u8 save_flags[MAX_ACHIEVEMENTS] = {0};
     int save_flag_count = 0;
@@ -482,8 +501,9 @@ int main(int argc, char **argv)
     int game_screen = 0;
     int achievement_offset = 0;
 
-    save_flag_count = load_save_flags(games[0].appid, save_flags,
-                                      MAX_ACHIEVEMENTS);
+    if (game_count > 0)
+        save_flag_count = load_save_flags(games[0].steam_appid, save_flags,
+                                          MAX_ACHIEVEMENTS);
 
     int diagnostic_screen = 0;
     Result diagnostic_result = 0;
@@ -511,45 +531,52 @@ int main(int argc, char **argv)
                 diagnostic_screen = 1;
             }
 
-            if (kDown & HidNpadButton_Right) {
-                selected = (selected + 1) % game_count;
-                save_flag_count = load_save_flags(games[selected].appid,
-                                                  save_flags, MAX_ACHIEVEMENTS);
+            if (game_count > 0) {
+                if (kDown & HidNpadButton_Right)
+                    selected = (selected + 1) % game_count;
+                if (kDown & HidNpadButton_Left)
+                    selected = (selected + game_count - 1) % game_count;
+                if ((kDown & HidNpadButton_Up) && selected >= 4)
+                    selected -= 4;
+                if ((kDown & HidNpadButton_Down) && selected + 4 < game_count)
+                    selected += 4;
             }
-            if (kDown & HidNpadButton_Left) {
-                selected = (selected + game_count - 1) % game_count;
-                save_flag_count = load_save_flags(games[selected].appid,
-                                                  save_flags, MAX_ACHIEVEMENTS);
-            }
-            if (kDown & HidNpadButton_A) {
+
+            if ((kDown & HidNpadButton_A) && game_count > 0) {
                 achievement_count = -1;
-                snprintf(sync_status, sizeof(sync_status),
-                         "Connecting to Steam...");
 
-                if (net_ready) {
-                    char *response = malloc(262144);
-                    if (response) {
-                        char path[192];
-                        snprintf(path, sizeof(path),
-                            "/IPlayerService/GetGameAchievements/v1/?appid=%s&language=english",
-                            games[selected].appid);
+                if (!games[selected].steam_appid[0]) {
+                    snprintf(sync_status, sizeof(sync_status),
+                             "No Steam AppID (add to games.json)");
+                } else {
+                    snprintf(sync_status, sizeof(sync_status),
+                             "Connecting to Steam...");
 
-                        if (net_https_get("api.steampowered.com",
-                                          path, response, 262144)) {
-                            achievement_count = steam_parse_achievements(
-                                response, achievements, MAX_ACHIEVEMENTS);
+                    if (net_ready) {
+                        char *response = malloc(262144);
+                        if (response) {
+                            char path[192];
+                            snprintf(path, sizeof(path),
+                                "/IPlayerService/GetGameAchievements/v1/?appid=%s&language=english",
+                                games[selected].steam_appid);
+
+                            if (net_https_get("api.steampowered.com",
+                                              path, response, 262144)) {
+                                achievement_count = steam_parse_achievements(
+                                    response, achievements, MAX_ACHIEVEMENTS);
+                            }
+
+                            free(response);
                         }
-
-                        free(response);
                     }
                 }
 
                 if (achievement_count >= 0) {
                     snprintf(sync_status, sizeof(sync_status),
                              "Steam: %d achievements", achievement_count);
-                } else {
+                } else if (games[selected].steam_appid[0]) {
                     achievement_count = romfs_ready
-                        ? load_catalog(games[selected].appid, achievements,
+                        ? load_catalog(games[selected].steam_appid, achievements,
                                        MAX_ACHIEVEMENTS)
                         : -1;
 
@@ -559,7 +586,7 @@ int main(int argc, char **argv)
                              : "Steam sync failed");
                 }
 
-                save_flag_count = load_save_flags(games[selected].appid,
+                save_flag_count = load_save_flags(games[selected].steam_appid,
                                                   save_flags, MAX_ACHIEVEMENTS);
 
                 achievement_offset = 0;
@@ -609,54 +636,88 @@ int main(int argc, char **argv)
         } else if (!game_screen) {
             draw_text(face, pixels, 55, 72, "NX-Stach");
 
-            round_rect(pixels, 55, 110, 1170, 90, 18,
-                       RGBA8_MAXALPHA(52, 55, 60));
-            draw_text(face, pixels, 85, 165, "Steam Achievements");
+            const int per_page = 8;
+            const int page = selected / per_page;
+            const int first = page * per_page;
+            const int pages = (game_count + per_page - 1) / per_page;
 
-            int tile_x[4] = {55, 350, 645, 940};
-            int tile_w[4] = {270, 270, 270, 285};
+            char page_text[32];
+            snprintf(page_text, sizeof(page_text), "%d / %d",
+                     page + 1, pages > 0 ? pages : 1);
+            int page_width = measure_text(face, page_text);
+            draw_text(face, pixels, W - 55 - page_width, 72, page_text);
+
+            if (game_count == 0) {
+                draw_text(face, pixels, 55, 300, "No games found");
+                draw_text(face, pixels, 55, 360,
+                          "Check SD:/switch/NX-Stach/games.json");
+            }
 
             static int marquee_offset = 0;
 
-            for (int i = 0; i < game_count; i++) {
-                u32 color = (i == selected)
-                    ? RGBA8_MAXALPHA(82, 86, 94)
-                    : RGBA8_MAXALPHA(52, 55, 60);
+            for (int slot = 0; slot < per_page; slot++) {
+                int i = first + slot;
+                if (i >= game_count) break;
 
-                round_rect(pixels, tile_x[i], 230, tile_w[i], 190, 18, color);
+                int col = slot % 4;
+                int row = slot / 4;
+                int x = 55 + col * 295;
+                int y = 210 + row * 215;
 
-                if (i == 1) {
-                    int left = tile_x[i] + 20;
-                    int right = tile_x[i] + tile_w[i] - 20;
+                const u32 *cover = library_cover(games[i].title_id);
 
-                    clip_left = left;
-                    clip_right = right;
-
-                    int text_width = measure_text(face, games[i].name);
-                    int cycle = text_width + 60;
-
-                    marquee_offset = (marquee_offset + 1) % cycle;
-
-                    draw_text(face, pixels,
-                              left - marquee_offset, 300, games[i].name);
-                    draw_text(face, pixels,
-                              left - marquee_offset + cycle, 300, games[i].name);
-
-                    clip_left = 0;
-                    clip_right = W;
+                if (cover) {
+                    draw_cover(pixels, x, y, cover);
                 } else {
-                    draw_text(face, pixels, tile_x[i] + 25, 300, games[i].name);
+                    round_rect(pixels, x, y, LIB_COVER_W, LIB_COVER_H, 16,
+                               RGBA8_MAXALPHA(52, 55, 60));
+                    draw_text(face, pixels, x + 20, y + 100,
+                              "no cover");
+                }
+
+                int bar_y = y + LIB_COVER_H - 44;
+                rect(pixels, x, bar_y, LIB_COVER_W, 44,
+                     RGBA8_MAXALPHA(22, 23, 26));
+
+                clip_left = x + 10;
+                clip_right = x + LIB_COVER_W - 10;
+
+                if (i == selected) {
+                    int text_width = measure_text(face, games[i].name);
+                    int cycle = text_width + 40;
+                    if (cycle < 1) cycle = 1;
+
+                    marquee_offset = (marquee_offset + 2) % cycle;
+
+                    draw_text(face, pixels, x + 10 - marquee_offset,
+                              bar_y + 33, games[i].name);
+                    draw_text(face, pixels, x + 10 - marquee_offset + cycle,
+                              bar_y + 33, games[i].name);
+                } else {
+                    draw_text(face, pixels, x + 10, bar_y + 33,
+                              games[i].name);
+                }
+
+                clip_left = 0;
+                clip_right = W;
+
+                if (i == selected) {
+                    u32 accent = RGBA8_MAXALPHA(120, 200, 255);
+                    rect(pixels, x, y, LIB_COVER_W, 3, accent);
+                    rect(pixels, x, y + LIB_COVER_H - 3, LIB_COVER_W, 3, accent);
+                    rect(pixels, x, y, 3, LIB_COVER_H, accent);
+                    rect(pixels, x + LIB_COVER_W - 3, y, 3, LIB_COVER_H, accent);
                 }
             }
 
-            draw_text(face, pixels, 55, 500, "A: Open game");
-            draw_text(face, pixels, 55, 650, "Press + to exit");
+            draw_text(face, pixels, 55, 665,
+                      "A: Open    D-Pad: Select    +: Exit");
         } else {
             draw_text(face, pixels, 55, 72, games[selected].name);
 
             int unlocked_count = 0;
             for (int i = 0; i < achievement_count; i++) {
-                if (achievement_unlocked(games[selected].appid, i,
+                if (achievement_unlocked(games[selected].steam_appid, i,
                                          &achievements[i],
                                          save_flags, save_flag_count))
                     unlocked_count++;
@@ -681,7 +742,7 @@ int main(int argc, char **argv)
                 if (index >= achievement_count) break;
 
                 bool unlocked = achievement_unlocked(
-                    games[selected].appid, index, &achievements[index],
+                    games[selected].steam_appid, index, &achievements[index],
                     save_flags, save_flag_count);
 
                 int y = 310 + i * 65;
@@ -718,6 +779,7 @@ int main(int argc, char **argv)
 
     if (net_ready) net_exit();
     save_exit();
+    library_exit();
     if (romfs_ready) romfsExit();
     framebufferClose(&fb);
     FT_Done_Face(face);
