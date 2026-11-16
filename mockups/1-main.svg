@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" font-family="Segoe UI, Roboto, Arial, sans-serif">
+  <rect width="1280" height="720" fill="#1c1e22"/>
+
+  <text x="55" y="62" font-size="34" fill="#b8dcff" font-weight="600">NX-Stach</text>
+  <text x="1210" y="62" font-size="18" fill="#7d8290" text-anchor="end">12 игр</text>
+
+  <rect x="55" y="82" width="1170" height="52" rx="14" fill="#2c2f35"/>
+  <text x="78" y="116" font-size="20" fill="#787d8b">Поиск...</text>
+  <rect x="1174" y="96" width="28" height="28" rx="14" fill="#3a3e46"/>
+  <text x="1188" y="117" font-size="15" fill="#e1e6f0" text-anchor="middle">Y</text>
+
+  <g>
+    <rect x="41" y="178" width="175" height="175" rx="8" fill="#2f333a"/>
+    <rect x="41" y="178" width="175" height="175" rx="8" fill="none" stroke="#f0f3f8" stroke-width="3" opacity="0.9"/>
+    <text x="128" y="272" font-size="13" fill="#9aa0ad" text-anchor="middle">DOOM Eternal</text>
+
+    <rect x="246" y="178" width="175" height="175" rx="8" fill="#3a2f2a"/>
+    <rect x="351" y="178" width="175" height="175" rx="8" fill="#2a3a3a"/>
+    <rect x="456" y="178" width="175" height="175" rx="8" fill="#332a3a"/>
+    <rect x="561" y="178" width="175" height="175" rx="8" fill="#2a2f3a"/>
+    <rect x="666" y="178" width="175" height="175" rx="8" fill="#3a332a"/>
+    <rect x="771" y="178" width="175" height="175" rx="8" fill="#2a3a2f"/>
+    <rect x="876" y="178" width="175" height="175" rx="8" fill="#3a2a2f"/>
+    <rect x="981" y="178" width="175" height="175" rx="8" fill="#2f2a3a"/>
+    <rect x="1086" y="178" width="175" height="175" rx="8" fill="#2a353a"/>
+
+    <rect x="41" y="383" width="175" height="175" rx="8" fill="#2a353a"/>
+    <rect x="246" y="383" width="175" height="175" rx="8" fill="#3a2f2a"/>
+    <rect x="351" y="383" width="175" height="175" rx="8" fill="#2a3a3a"/>
+    <rect x="456" y="383" width="175" height="175" rx="8" fill="#332a3a"/>
+    <rect x="561" y="383" width="175" height="175" rx="8" fill="#2a2f3a"/>
+  </g>
+
+  <g>
+    <rect x="370" y="636" width="540" height="50" rx="14" fill="#2c2f35"/>
+    <circle cx="404" cy="661" r="14" fill="#4a4f59"/>
+    <text x="404" y="667" font-size="15" fill="#eef2f8" text-anchor="middle">X</text>
+    <text x="432" y="668" font-size="18" fill="#dfe4ee">Добавить достижения из Steam</text>
+  </g>
+
+  <text x="55" y="706" font-size="15" fill="#6d7280">Подсказка появляется, только если у выбранной игры ещё нет Steam AppID</text>
+</svg>
