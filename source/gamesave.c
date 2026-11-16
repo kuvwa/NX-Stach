@@ -414,9 +414,14 @@ static int dump_copy(FsFileSystem *fs, const char *src_dir, const char *dst_dir,
             char src[400];
             char dst[400];
 
-            if (entries[i].type == FsDirEntryType_Dir) {
+            if (strcmp(src_dir, "/") == 0)
+                snprintf(src, sizeof(src), "/%.120s", entries[i].name);
+            else
                 snprintf(src, sizeof(src), "%.180s/%.60s", src_dir, entries[i].name);
-                snprintf(dst, sizeof(dst), "%.180s/%.60s", dst_dir, entries[i].name);
+
+            snprintf(dst, sizeof(dst), "%.180s/%.60s", dst_dir, entries[i].name);
+
+            if (entries[i].type == FsDirEntryType_Dir) {
                 files += dump_copy(fs, src, dst, depth + 1, count);
                 continue;
             }
@@ -424,9 +429,6 @@ static int dump_copy(FsFileSystem *fs, const char *src_dir, const char *dst_dir,
             if (entries[i].file_size <= 0 ||
                 entries[i].file_size > (4 * 1024 * 1024))
                 continue;
-
-            snprintf(src, sizeof(src), "%.180s/%.60s", src_dir, entries[i].name);
-            snprintf(dst, sizeof(dst), "%.180s/%.60s", dst_dir, entries[i].name);
 
             size_t size = 0;
             u8 *data = gamesave_read_file(fs, src, &size);
@@ -476,6 +478,11 @@ int gamesave_dump_to_sd(u64 title_id)
     FsSaveDataInfo entries[64];
     int count = 0;
     int containers = 0;
+    int matched = 0;
+
+    char rpath[300];
+    snprintf(rpath, sizeof(rpath), "%s/report.txt", root);
+    FILE *report = fopen(rpath, "w");
 
     for (int page = 0; page < 64; page++) {
         s64 got = 0;
@@ -486,6 +493,14 @@ int gamesave_dump_to_sd(u64 title_id)
         for (s64 i = 0; i < got; i++) {
             if (entries[i].application_id != title_id)
                 continue;
+
+            matched++;
+
+            if (report)
+                fprintf(report, "container save_id=%016llX idx=%u type=%u\n",
+                        (unsigned long long)entries[i].save_data_id,
+                        (unsigned)entries[i].save_data_index,
+                        (unsigned)entries[i].save_data_type);
 
             FsSaveDataAttribute attr;
             memset(&attr, 0, sizeof(attr));
@@ -499,9 +514,14 @@ int gamesave_dump_to_sd(u64 title_id)
 
             FsFileSystem fs;
 
-            if (R_FAILED(fsOpenReadOnlySaveDataFileSystem(
-                    &fs, (FsSaveDataSpaceId)entries[i].save_data_space_id, &attr)))
+            Result open_rc = fsOpenReadOnlySaveDataFileSystem(
+                    &fs, (FsSaveDataSpaceId)entries[i].save_data_space_id, &attr);
+
+            if (R_FAILED(open_rc)) {
+                if (report)
+                    fprintf(report, "  open failed: 0x%08X\n", (unsigned)open_rc);
                 continue;
+            }
 
             char dir[280];
             snprintf(dir, sizeof(dir), "%s/%016llX", root,
@@ -509,7 +529,11 @@ int gamesave_dump_to_sd(u64 title_id)
 
             mkdir(dir, 0777);
 
-            dump_copy(&fs, "", dir, 0, &count);
+            int before = count;
+            dump_copy(&fs, "/", dir, 0, &count);
+
+            if (report)
+                fprintf(report, "  dir=%s files=%d\n", dir, count - before);
 
             fsFsClose(&fs);
             containers++;
@@ -519,6 +543,12 @@ int gamesave_dump_to_sd(u64 title_id)
     }
 
     fsSaveDataInfoReaderClose(&reader);
+
+    if (report) {
+        fprintf(report, "title=%016llX matched=%d containers=%d files=%d\n",
+                (unsigned long long)title_id, matched, containers, count);
+        fclose(report);
+    }
 
     last_error = count > 0 ? "OK" : "EMPTY";
 
