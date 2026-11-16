@@ -9,6 +9,7 @@ typedef enum {
     SFX_BACK,
     SFX_ERROR,
     SFX_START,
+    SFX_TOGGLE,
     SFX_COUNT
 } SfxId;
 

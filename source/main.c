@@ -1159,7 +1159,7 @@ int main(int argc, char **argv)
                 } else if (tap_y >= 276 && tap_y <= 332) {
                     only_locked = !only_locked;
                     list_scroll = list_target = 0.0f;
-                    audio_play(SFX_NAV);
+                    audio_play(SFX_TOGGLE);
                     consumed = true;
                 }
             }
@@ -1215,6 +1215,7 @@ int main(int argc, char **argv)
                         if (next < view_count) {
                             selected = next;
                             follow_selection = 1;
+                            audio_play(SFX_NAV);
                         }
                     }
                     if (kDown & HidNpadButton_Up) {
@@ -1222,6 +1223,7 @@ int main(int argc, char **argv)
                         if (next >= 0) {
                             selected = next;
                             follow_selection = 1;
+                            audio_play(SFX_NAV);
                         }
                     }
                 }

@@ -30,9 +30,15 @@ static size_t sample_bytes[SFX_COUNT];
 static void add_tone(s16 *dst, int *frame, int frames, float freq, float amp,
                      float decay)
 {
+    const int attack = SAMPLE_RATE / 250;   // ~4 мс мягкого нарастания
+
     for (int i = 0; i < frames && *frame < MAX_FRAMES; i++, (*frame)++) {
         float t = (float)i / (float)SAMPLE_RATE;
         float env = expf(-decay * t);
+
+        if (i < attack)
+            env *= (float)i / (float)attack;
+
         float v = sinf(2.0f * 3.14159265f * freq * t) * env * amp;
         int s = (int)(v * 32767.0f);
 
@@ -53,34 +59,40 @@ static void build_sounds(void)
 
     int f;
 
-    // навигация: короткий клик
+    // навигация: мягкий короткий тон
     f = 0;
-    add_tone(samples[SFX_NAV], &f, 700, 1180.0f, 0.22f, 60.0f);
+    add_tone(samples[SFX_NAV], &f, 1100, 880.0f, 0.085f, 42.0f);
     sample_bytes[SFX_NAV] = (size_t)f * CHANNELS * sizeof(s16);
 
-    // подтверждение: два тона вверх
+    // подтверждение: два мягких тона вверх
     f = 0;
-    add_tone(samples[SFX_OK], &f, 900, 660.0f, 0.26f, 26.0f);
-    add_tone(samples[SFX_OK], &f, 1800, 990.0f, 0.26f, 22.0f);
+    add_tone(samples[SFX_OK], &f, 1500, 587.0f, 0.095f, 20.0f);
+    add_tone(samples[SFX_OK], &f, 2600, 880.0f, 0.095f, 16.0f);
     sample_bytes[SFX_OK] = (size_t)f * CHANNELS * sizeof(s16);
 
     // назад: тон вниз
     f = 0;
-    add_tone(samples[SFX_BACK], &f, 1400, 520.0f, 0.24f, 26.0f);
-    add_tone(samples[SFX_BACK], &f, 900, 380.0f, 0.22f, 30.0f);
+    add_tone(samples[SFX_BACK], &f, 1800, 494.0f, 0.085f, 20.0f);
+    add_tone(samples[SFX_BACK], &f, 1400, 370.0f, 0.080f, 24.0f);
     sample_bytes[SFX_BACK] = (size_t)f * CHANNELS * sizeof(s16);
 
-    // ошибка: низкий гудок
+    // ошибка: низкий тихий гудок
     f = 0;
-    add_tone(samples[SFX_ERROR], &f, 3600, 190.0f, 0.28f, 12.0f);
+    add_tone(samples[SFX_ERROR], &f, 4200, 175.0f, 0.10f, 9.0f);
     sample_bytes[SFX_ERROR] = (size_t)f * CHANNELS * sizeof(s16);
 
     // запуск: арпеджио вверх
     f = 0;
-    add_tone(samples[SFX_START], &f, 1600, 523.0f, 0.22f, 16.0f);
-    add_tone(samples[SFX_START], &f, 1600, 659.0f, 0.22f, 16.0f);
-    add_tone(samples[SFX_START], &f, 2600, 784.0f, 0.24f, 12.0f);
+    add_tone(samples[SFX_START], &f, 2200, 523.0f, 0.085f, 13.0f);
+    add_tone(samples[SFX_START], &f, 2200, 659.0f, 0.085f, 13.0f);
+    add_tone(samples[SFX_START], &f, 3200, 784.0f, 0.095f, 10.0f);
     sample_bytes[SFX_START] = (size_t)f * CHANNELS * sizeof(s16);
+
+    // тумблер: характерный «двойной» щелчок, не похож на остальные
+    f = 0;
+    add_tone(samples[SFX_TOGGLE], &f, 900, 1318.0f, 0.085f, 55.0f);
+    add_tone(samples[SFX_TOGGLE], &f, 1200, 988.0f, 0.080f, 50.0f);
+    sample_bytes[SFX_TOGGLE] = (size_t)f * CHANNELS * sizeof(s16);
 }
 
 bool audio_init(void)
