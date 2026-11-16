@@ -1,34 +1,91 @@
-# NX-Stach — установка
+NX-Stach — Steam achievements viewer for Nintendo Switch
+=========================================================
 
-## Что копировать на SD-карту
+Что это
+--------
+Homebrew-приложение, которое показывает достижения Steam для игр,
+установленных на консоли, и (где возможно) отслеживает прогресс прямо
+из сохранений игр.
 
-Папку `switch` из этого архива кладём в корень карты памяти (с заменой файлов).
+Требования
+-----------
+1. Прошивка с Atmosphere (любая актуальная).
+2. Homebrew Menu (hbmenu) — NX-Stach запускается оттуда как обычный .nro.
+3. Для оверлея NX-Stach Tracker: установленный Tesla/Ultrahand + ovlloader.
+   Без них .ovl просто не появится в меню оверлеев.
 
-Должно получиться:
+Установка
+---------
+Скопировать папку switch из архива в корень SD-карты (с заменой файлов):
 
-```
-SD:/switch/NX-Stach.nro
-SD:/switch/.overlays/NX-Stach-Tracker.ovl
-SD:/switch/NX-Stach/games.json
-SD:/switch/NX-Stach/progress.json      <- создастся сам
-```
+    SD:/switch/NX-Stach.nro
+    SD:/switch/.overlays/NX-Stach-Tracker.ovl
 
-## Как запустить
+Запуск: Homebrew Menu -> NX-Stach.
 
-1. NX-Stach: Homebrew Menu (Album) → NX-Stach.
-2. Tracker (оверлей): запустить любую игру → HOME → Ultrahand/Tesla → NX-Stach Tracker.
+Первый запуск
+-------------
+- Приложение само соберёт список установленных игр и загрузит обложки с консоли.
+- Язык интерфейса переключается кнопками EN / RU справа сверху (сохраняется).
 
-## Что должно быть видно
+Достижения
+----------
+1. Зайди в игру (A).
+2. Если каталога нет — внизу кнопка "Import from Steam by name".
+   Нажми её (или Y), введи название, выбери игру из списка (до 24 вариантов
+   с иконками) и подтверди A.
+   Каталог достижений и иконки сохранятся на карту:
+     SD:/switch/NX-Stach/catalog/<appid>.json
+     SD:/switch/NX-Stach/catalog/icons/<appid>/
+3. Прогресс:
+   - для игр с рецептом сейва (Hotline Miami 1/2, Downwell, My Friend Pedro)
+     он читается автоматически при каждом открытии экрана игры;
+   - для остальных — тап по достижению ставит/снимает "получено"
+     (сохраняется в progress.json, метка "(added manually)" у названия игры).
 
-- Оверлей: название запущенной игры + её Title ID.
-  Если вместо названия `Unknown game` — значит игра не запущена или оверлей запущен не поверх игры.
-- NX-Stach: экран достижений Hotline Miami — 35 настоящих достижений Steam
-  (Combo Beginner, Playing Pool, Dog Lover, ...), а не тестовые "First Steps".
+Горячие клавиши
+---------------
+    A          — открыть игру
+    B          — назад / сбросить поиск
+    Y          — поиск игры
+    X          — закрепить/открепить игру (закреплённые сверху)
+    +          — выход
+    Стики      — выбор и прокрутка, тач — то же самое
 
-## Сборка (если правишь код)
+Рецепты (для разработчиков)
+---------------------------
+Чтение прогресса из сейва описывается JSON-рецептом:
 
-```bash
-export DEVKITPRO=/opt/devkitpro DEVKITA64=/opt/devkitpro/devkitA64
-cd ~/NX-Stach && make -j8            # .nro
-cd ~/NX-Stach/tracker && make -j8    # .ovl
-```
+    SD:/switch/NX-Stach/recipes/<TITLE_ID>_<STEAM_APPID>.json
+
+Пример (Hotline Miami):
+{
+  "steam_appid": "219150",
+  "file_path": "/HotlineMiami/savedata.vfs",
+  "marker": "unlocked_achievements.dat",
+  "offset": 0,
+  "skip": 1,
+  "format": 0,
+  "count": 35
+}
+
+format: 0 — ASCII '0'/'1' через перевод строки, 1 — байты 0/1,
+        3 — битовая маска в текстовом файле (marker = ключ),
+        4 — ключи вида <marker><индекс> (Unity PlayerPrefs).
+skip — сколько флагов пропустить в начале (служебный первый флаг).
+
+Ограничения
+-----------
+- Nintendo не предоставляет системы достижений, поэтому "магии для всех игр"
+  не существует: автопрогресс возможен только там, где игра хранит состояние
+  достижений в своём сохранении.
+- Каталоги достижений берутся из Steam по AppID и являются метаданными.
+
+Файлы, которые создаются на карте
+---------------------------------
+    SD:/switch/NX-Stach/settings.ini   — язык
+    SD:/switch/NX-Stach/pins.txt       — закреплённые игры
+    SD:/switch/NX-Stach/progress.json  — ручные отметки
+    SD:/switch/NX-Stach/games.json     — связки Title ID -> Steam AppID
+    SD:/switch/NX-Stach/catalog/       — каталоги и иконки достижений
+    SD:/switch/NX-Stach/recipes/       — рецепты чтения сейвов
