@@ -1,0 +1,125 @@
+{
+  "appid": "360740",
+  "achievements": [
+    {
+      "internal_name": "beatCavern",
+      "localized_name": "Bye Frogs",
+      "localized_desc": "Beat the first area",
+      "icon": "8da098a87ff23b95b8925534a0b9e24c672af9e1.jpg"
+    },
+    {
+      "internal_name": "beatCatacombs",
+      "localized_name": "Bye Ghosts",
+      "localized_desc": "Beat the second area",
+      "icon": "f2b997e0051bb2aa3f9ae294282799b986e47305.jpg"
+    },
+    {
+      "internal_name": "beatAquifer",
+      "localized_name": "Bye Squids",
+      "localized_desc": "Beat the third area",
+      "icon": "6eab837479224438ab855e292812d3b69378b92b.jpg"
+    },
+    {
+      "internal_name": "beatLimbo",
+      "localized_name": "Bye Stuff",
+      "localized_desc": "Beat the fourth area",
+      "icon": "6a844ff999eb5b9f9dbc0bcf8a0c12f587a121cc.jpg"
+    },
+    {
+      "internal_name": "beatAbyss",
+      "localized_name": "Bye Well",
+      "localized_desc": "Beat the boss",
+      "icon": "3d9f0742ba34ddf44fc2df7d93a1c2ee5425700e.jpg"
+    },
+    {
+      "internal_name": "beatCavernH",
+      "localized_name": "So Many Frogs",
+      "localized_desc": "Beat the first area (hard mode)",
+      "icon": "e1da9ccba23d27f233348aced496d229d7aa5f4b.jpg"
+    },
+    {
+      "internal_name": "beatCatacombsH",
+      "localized_name": "So Many Ghosts",
+      "localized_desc": "Beat the second area (hard mode)",
+      "icon": "52e7a56ee5599790ed3b4c353155cb1b51d1e3ce.jpg"
+    },
+    {
+      "internal_name": "beatAquiferH",
+      "localized_name": "So Many Squids",
+      "localized_desc": "Beat the third area (hard mode)",
+      "icon": "145d15d410d3270dfa5f5c69d6fafa6fbe509581.jpg"
+    },
+    {
+      "internal_name": "beatLimboH",
+      "localized_name": "So Much Stuff",
+      "localized_desc": "Beat the fourth area (hard mode)",
+      "icon": "9eefa54e7515a79d3adc9a61a6104865428aeb2c.jpg"
+    },
+    {
+      "internal_name": "beatAbyssH",
+      "localized_name": "Well Master",
+      "localized_desc": "Beat the boss (hard mode)",
+      "icon": "f8a3c66ede83c617ec81b5a54b65e7a778058f67.jpg"
+    },
+    {
+      "internal_name": "combo10",
+      "localized_name": "Wow Combo",
+      "localized_desc": "Land a 10 combo",
+      "icon": "0a5ddc852767a4dc9b8f7f0ca6097b312f37250f.jpg"
+    },
+    {
+      "internal_name": "combo30",
+      "localized_name": "Whoa Combo",
+      "localized_desc": "Land a 30 combo",
+      "icon": "d47ffab141af53acc152decb8ca53f36cff09ab1.jpg"
+    },
+    {
+      "internal_name": "combo100",
+      "localized_name": "Sugoi Combo",
+      "localized_desc": "Land a 100 combo",
+      "icon": "13a9edc6ca2a556bd5120386c5d28d4315d14d6d.jpg"
+    },
+    {
+      "internal_name": "levelNoDamage",
+      "localized_name": "Careful Descent",
+      "localized_desc": "Complete a level without taking damage",
+      "icon": "b2d6c1520fe0ad67b69afa8e18bffa7d97fe2e27.jpg"
+    },
+    {
+      "internal_name": "levelNoLand",
+      "localized_name": "Ground Allergy",
+      "localized_desc": "Complete a level without landing",
+      "icon": "45bdfb01cc7aac7af92618c432272743a4fde616.jpg"
+    },
+    {
+      "internal_name": "levelNoSideroom",
+      "localized_name": "Time Never Stops",
+      "localized_desc": "Complete a level without visiting siderooms",
+      "icon": "be6c627a1951be4a2dae4ce87d2d49fa376bf2d7.jpg"
+    },
+    {
+      "internal_name": "levelNoKill",
+      "localized_name": "Pacifist",
+      "localized_desc": "Complete a level without killing any enemy",
+      "icon": "c0020ba4a4836316bbcc327693bbed198601bd0d.jpg"
+    },
+    {
+      "internal_name": "levelNoShot",
+      "localized_name": "Mottainai",
+      "localized_desc": "Complete a level without shooting",
+      "icon": "28330ef788f70e70c065bf1f51221bf10065fe5d.jpg"
+    },
+    {
+      "internal_name": "save3000gem",
+      "localized_name": "Saving Up",
+      "localized_desc": "Have more than 3000 gems",
+      "icon": "582019998f3c02b2540be21e9956362e28ad4859.jpg"
+    },
+    {
+      "internal_name": "save5000gem",
+      "localized_name": "Frugality",
+      "localized_desc": "Have more than 5000 gems",
+      "icon": "47fd0b32c7dc7b31fca7b72ad8c7869ce3a680b6.jpg"
+    }
+  ]
+}

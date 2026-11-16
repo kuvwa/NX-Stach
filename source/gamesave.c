@@ -238,6 +238,42 @@ int gamesave_read_block(u64 title_id, const char *file_path, const char *marker,
         size = start + block_size;
     }
 
+    if (format == 3) {
+        // marker = ключ, после которого число-битмаска
+        size_t mlen = marker ? strlen(marker) : 0;
+        size_t pos = (size_t)-1;
+
+        if (mlen > 0) {
+            for (size_t i = 0; i + mlen < size; i++) {
+                if (memcmp(data + i, marker, mlen) == 0) {
+                    pos = i + mlen;
+                    break;
+                }
+            }
+        }
+
+        if (pos == (size_t)-1) {
+            last_error = "MARKER_NOT_FOUND";
+            free(data);
+            return -1;
+        }
+
+        while (pos < size && (data[pos] == ' ' || data[pos] == '\t'))
+            pos++;
+
+        unsigned long mask = strtoul((const char *)data + pos, NULL, 10);
+        int bits = 0;
+
+        for (int i = 0; i < max_flags; i++) {
+            flags[i] = (u8)((mask >> i) & 1);
+            bits++;
+        }
+
+        free(data);
+        last_error = "OK";
+        return bits;
+    }
+
     if (start >= size) {
         last_error = "OFFSET";
         free(data);

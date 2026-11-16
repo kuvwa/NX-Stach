@@ -1,0 +1,3 @@
+container save_id=0000000000000094 idx=0 type=3
+  dir=sdmc:/switch/NX-Stach/dumps/05F2A339C4016000/0000000000000094 files=0
+title=05F2A339C4016000 matched=1 containers=1 files=0

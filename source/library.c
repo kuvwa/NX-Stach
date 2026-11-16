@@ -218,6 +218,7 @@ typedef struct {
 static const Variant VARIANTS[] = {
     { 0x0100D0E00E51E000ULL, "Hotline Miami", "219150" },
     { 0x0100D0E00E51E000ULL, "Hotline Miami 2: Wrong Number", "274170" },
+    { 0x010093D00C726000ULL, "Downwell", "360740" },
 };
 
 static int expand_variants(Game *games, int count, int max_games) {
