@@ -22,13 +22,16 @@
 #define H 720
 #define MAX_ACHIEVEMENTS 100
 
-#define COVER_SIZE 190
-#define GRID_COLS 5
-#define GRID_X0 55
-#define GRID_STEP_X 245
-#define GRID_Y0 175
-#define GRID_STEP_Y 235
-#define HEADER_H 150
+// сетка постеров как в Steam
+#define CARD_W 162
+#define CARD_H 243
+#define GRID_COLS 7
+#define GRID_GAP_X 10
+#define GRID_GAP_Y 10
+#define GRID_STEP_X (CARD_W + GRID_GAP_X)
+#define GRID_STEP_Y (CARD_H + GRID_GAP_Y)
+#define GRID_Y0 150
+#define HEADER_H 140
 
 #define ACH_ICON_SIZE 44
 #define ROW_H 72
@@ -36,11 +39,12 @@
 #define LIST_TOP 316
 #define LIST_BOTTOM 700
 
-#define COLOR_BG      RGBA8_MAXALPHA(28, 30, 34)
+#define COLOR_BG      RGBA8_MAXALPHA(24, 26, 30)
 #define COLOR_PANEL   RGBA8_MAXALPHA(44, 47, 52)
 #define COLOR_TRACK   RGBA8_MAXALPHA(60, 64, 70)
 #define COLOR_ACCENT  RGBA8_MAXALPHA(120, 200, 255)
 #define COLOR_LINE    RGBA8_MAXALPHA(48, 51, 57)
+#define COLOR_SELECT  RGBA8_MAXALPHA(240, 243, 248)
 
 static u32 fb_width;
 static int clip_left = 0;
@@ -182,7 +186,6 @@ static void draw_text_right(FT_Face face, u32 *fb, int right, int y, const char 
     draw_text(face, fb, right - measure_text(face, str), y, str);
 }
 
-// Перелив светло-голубой -> белый.
 static void draw_text_shine(FT_Face face, u32 *fb, int x, int y,
                             const char *str, int phase)
 {
@@ -227,6 +230,36 @@ static int measure_text(FT_Face face, const char *str)
     return width;
 }
 
+// Квадратная иконка -> постер нужного размера (центральный кроп).
+static void draw_poster(u32 *fb, int x, int y, int w, int h,
+                        const u32 *cover, u32 corner_color, int radius)
+{
+    int src_w = LIB_COVER_H * w / h;
+    if (src_w > LIB_COVER_W) src_w = LIB_COVER_W;
+    int src_x0 = (LIB_COVER_W - src_w) / 2;
+
+    for (int j = 0; j < h; j++) {
+        int py = y + j;
+        if (py < 0 || py >= H) continue;
+
+        int sy = j * LIB_COVER_H / h;
+        if (sy >= LIB_COVER_H) sy = LIB_COVER_H - 1;
+
+        for (int i = 0; i < w; i++) {
+            int px = x + i;
+            if (px < 0 || px >= W) continue;
+
+            int sx = src_x0 + i * src_w / w;
+            if (sx >= LIB_COVER_W) sx = LIB_COVER_W - 1;
+
+            fb[(size_t)py * fb_width + px] =
+                cover[(size_t)sy * LIB_COVER_W + sx];
+        }
+    }
+
+    round_corners(fb, x, y, w, h, radius, corner_color);
+}
+
 static void draw_cover(u32 *fb, int x, int y, int size, const u32 *cover,
                        u32 corner_color, int radius)
 {
@@ -235,19 +268,11 @@ static void draw_cover(u32 *fb, int x, int y, int size, const u32 *cover,
         if (py < 0 || py >= H) continue;
         if (x < 0 || x + size > W) continue;
 
-        if (size == COVER_SIZE) {
-            memcpy(fb + (size_t)py * fb_width + x,
-                   cover + (size_t)j * COVER_SIZE,
-                   COVER_SIZE * sizeof(u32));
-        } else {
-            int sy = j * COVER_SIZE / size;
+        int sy = j * LIB_COVER_H / size;
 
-            for (int i = 0; i < size; i++) {
-                int sx = i * COVER_SIZE / size;
-                fb[(size_t)py * fb_width + x + i] =
-                    cover[(size_t)sy * COVER_SIZE + sx];
-            }
-        }
+        for (int i = 0; i < size; i++)
+            fb[(size_t)py * fb_width + x + i] =
+                cover[(size_t)sy * LIB_COVER_W + i * LIB_COVER_W / size];
     }
 
     round_corners(fb, x, y, size, size, radius, corner_color);
@@ -257,7 +282,7 @@ static void draw_scrollbar(u32 *fb, int x, int y, int h, int content, int view, 
 {
     if (content <= view) return;
 
-    round_rect(fb, x, y, 6, h, 3, COLOR_TRACK);
+    round_rect(fb, x, y, 5, h, 3, COLOR_TRACK);
 
     int thumb_h = h * view / content;
     if (thumb_h < 40) thumb_h = 40;
@@ -265,278 +290,10 @@ static void draw_scrollbar(u32 *fb, int x, int y, int h, int content, int view, 
     int max_scroll = content - view;
     int pos = max_scroll > 0 ? (h - thumb_h) * scroll / max_scroll : 0;
 
-    round_rect(fb, x, y + pos, 6, thumb_h, 3, RGBA8_MAXALPHA(150, 155, 165));
+    round_rect(fb, x, y + pos, 5, thumb_h, 3, RGBA8_MAXALPHA(150, 155, 165));
 }
 
-static u32 blend_px(u32 bg, u32 fg, int a)
-{
-    if (a <= 0) return bg;
-    if (a >= 255) return fg;
-
-    int br = bg & 0xFF, bg_g = (bg >> 8) & 0xFF, bb = (bg >> 16) & 0xFF;
-    int fr = fg & 0xFF, fg_g = (fg >> 8) & 0xFF, fb_ = (fg >> 16) & 0xFF;
-
-    int r = br + (fr - br) * a / 255;
-    int g = bg_g + (fg_g - bg_g) * a / 255;
-    int b = bb + (fb_ - bb) * a / 255;
-
-    return RGBA8_MAXALPHA(r, g, b);
-}
-
-// Мягкое свечение вокруг плитки.
-static void draw_glow(u32 *fb, int x, int y, int size, int radius,
-                      int spread, u32 color, int strength)
-{
-    int cx = x + size / 2;
-    int cy = y + size / 2;
-    int half = size / 2;
-    int outer = half + spread;
-    int inner = half - radius;
-
-    for (int py = cy - outer; py <= cy + outer; py++) {
-        if (py < 0 || py >= H) continue;
-
-        for (int px = cx - outer; px <= cx + outer; px++) {
-            if (px < 0 || px >= W) continue;
-
-            int dx = abs(px - cx) - inner;
-            int dy = abs(py - cy) - inner;
-
-            if (dx < 0) dx = 0;
-            if (dy < 0) dy = 0;
-
-            float d = sqrtf((float)(dx * dx + dy * dy)) - (float)radius;
-
-            if (d < 0.0f || d > (float)spread) continue;
-
-            int a = (int)((float)strength * (1.0f - d / (float)spread));
-            if (a <= 0) continue;
-
-            u32 *dst = &fb[(size_t)py * fb_width + px];
-            *dst = blend_px(*dst, color, a);
-        }
-    }
-}
-
-static void draw_icon_letter(FT_Face face, u32 *fb, int x, int y, int size,
-                             const char *letter)
-{
-    round_rect(fb, x, y, size, size, size / 2, RGBA8_MAXALPHA(52, 56, 63));
-    round_rect(fb, x + 1, y + 1, size - 2, size - 2, (size - 2) / 2,
-               RGBA8_MAXALPHA(34, 37, 42));
-
-    int w = measure_text(face, letter);
-    draw_text(face, fb, x + (size - w) / 2, y + size / 2 + 7, letter);
-}
-
-static void draw_icon_pill(FT_Face face, u32 *fb, int x, int y, int w, int h,
-                           const char *letter)
-{
-    round_rect(fb, x, y, w, h, 5, RGBA8_MAXALPHA(40, 43, 49));
-
-    int tw = measure_text(face, letter);
-    draw_text(face, fb, x + (w - tw) / 2, y + h / 2 + 7, letter);
-}
-
-// Левый Joy-Con: четыре отдельные кнопки-стрелки.
-static void draw_icon_dpad(u32 *fb, int x, int y, int size)
-{
-    int b = size / 4;
-    int gap = size / 4;
-    int cx = x + size / 2 - b / 2;
-    int cy = y + size / 2 - b / 2;
-
-    u32 c = RGBA8_MAXALPHA(48, 52, 58);
-
-    round_rect(fb, cx, y, b, b, b / 2, c);
-    round_rect(fb, cx, y + size - b, b, b, b / 2, c);
-    round_rect(fb, x, cy, b, b, b / 2, c);
-    round_rect(fb, x + size - b, cy, b, b, b / 2, c);
-
-    u32 arrow = RGBA8_MAXALPHA(190, 196, 206);
-
-    // маленькие треугольники-стрелки
-    for (int i = 0; i < b / 3; i++) {
-        rect(fb, cx + b / 2 - i, y + b / 2 - i / 2, i * 2 + 1, 1, arrow);
-        rect(fb, cx + b / 2 - i, y + size - b / 2 + i / 2 - 2, i * 2 + 1, 1, arrow);
-        rect(fb, x + b / 2 - i / 2, cy + b / 2 - i + 1, 1, i * 2 + 1, arrow);
-        rect(fb, x + size - b / 2 + i / 2 - 2, cy + b / 2 - i + 1, 1, i * 2 + 1, arrow);
-    }
-
-    (void)gap;
-}
-
-static void draw_icon_stick(u32 *fb, int x, int y, int size)
-{
-    round_rect(fb, x, y, size, size, size / 2, RGBA8_MAXALPHA(44, 47, 53));
-    round_rect(fb, x + 3, y + 3, size - 6, size - 6, (size - 6) / 2,
-               RGBA8_MAXALPHA(62, 66, 73));
-    round_rect(fb, x + size / 3, y + size / 3, size / 3, size / 3, size / 6,
-               RGBA8_MAXALPHA(120, 126, 136));
-}
-
-static void draw_icon_touch(u32 *fb, int x, int y, int size)
-{
-    round_rect(fb, x + size / 3, y + size / 8, size / 3, size / 2, size / 6,
-               RGBA8_MAXALPHA(215, 220, 230));
-    round_rect(fb, x + size / 6, y + size * 2 / 3, size * 2 / 3, 4, 2,
-               RGBA8_MAXALPHA(120, 200, 255));
-    round_rect(fb, x + size / 3, y + size * 5 / 6, size / 3, 4, 2,
-               RGBA8_MAXALPHA(120, 200, 255));
-}
-
-#define GLASS_W 620
-#define GLASS_H 470
-
-static u32 *glass_buf = NULL;
-static int glass_ready = 0;
-
-// Запоминает фон под окном, размывает и тонирует — «матовое стекло».
-static void glass_capture(u32 *fb, int x0, int y0, int w, int h)
-{
-    if (w > GLASS_W) w = GLASS_W;
-    if (h > GLASS_H) h = GLASS_H;
-
-    if (!glass_buf) {
-        glass_buf = malloc((size_t)GLASS_W * GLASS_H * sizeof(u32));
-        if (!glass_buf) return;
-    }
-
-    const int block = 7;
-    int sw = (w + block - 1) / block;
-    int sh = (h + block - 1) / block;
-
-    u32 *small = malloc((size_t)sw * sh * sizeof(u32));
-
-    if (!small) return;
-
-    for (int sy = 0; sy < sh; sy++) {
-        for (int sx = 0; sx < sw; sx++) {
-            u64 r = 0, g = 0, b = 0, n = 0;
-
-            for (int j = 0; j < block; j++) {
-                int py = y0 + sy * block + j;
-                if (py < 0 || py >= H) continue;
-
-                for (int i = 0; i < block; i++) {
-                    int px = x0 + sx * block + i;
-                    if (px < 0 || px >= W) continue;
-
-                    u32 c = fb[(size_t)py * fb_width + px];
-                    r += c & 0xFF;
-                    g += (c >> 8) & 0xFF;
-                    b += (c >> 16) & 0xFF;
-                    n++;
-                }
-            }
-
-            if (!n) n = 1;
-            small[(size_t)sy * sw + sx] = RGBA8_MAXALPHA(r / n, g / n, b / n);
-        }
-    }
-
-    const int div = block * block;
-
-    for (int y = 0; y < h; y++) {
-        int iy = y / block;
-        int ty = y % block;
-        int iy1 = (iy + 1 < sh) ? iy + 1 : iy;
-
-        for (int x = 0; x < w; x++) {
-            int ix = x / block;
-            int tx = x % block;
-            int ix1 = (ix + 1 < sw) ? ix + 1 : ix;
-
-            u32 c00 = small[(size_t)iy * sw + ix];
-            u32 c10 = small[(size_t)iy * sw + ix1];
-            u32 c01 = small[(size_t)iy1 * sw + ix];
-            u32 c11 = small[(size_t)iy1 * sw + ix1];
-
-            int r = 0, g = 0, b = 0;
-
-            for (int k = 0; k < 2; k++) {
-                int wy = k ? ty : (block - ty);
-                u32 top = k ? c01 : c00;
-                u32 bot = k ? c11 : c10;
-
-                for (int m = 0; m < 2; m++) {
-                    int wx = m ? tx : (block - tx);
-                    u32 c = m ? bot : top;
-                    int wgt = wx * wy;
-
-                    r += (c & 0xFF) * wgt;
-                    g += ((c >> 8) & 0xFF) * wgt;
-                    b += ((c >> 16) & 0xFF) * wgt;
-                }
-            }
-
-            u32 blurred = RGBA8_MAXALPHA(r / div, g / div, b / div);
-            u32 tone = blend_px(blurred, RGBA8_MAXALPHA(16, 18, 22), 130);
-
-            if (y < 74)
-                tone = blend_px(tone, RGBA8_MAXALPHA(255, 255, 255), 16);
-
-            glass_buf[(size_t)y * GLASS_W + x] = tone;
-        }
-    }
-
-    free(small);
-    glass_ready = 1;
-}
-
-static void glass_draw(u32 *fb, int x0, int y0, int w, int h, int radius)
-{
-    if (!glass_buf) return;
-
-    if (w > GLASS_W) w = GLASS_W;
-    if (h > GLASS_H) h = GLASS_H;
-
-    for (int j = 0; j < h; j++) {
-        int py = y0 + j;
-        if (py < 0 || py >= H) continue;
-
-        for (int i = 0; i < w; i++) {
-            int px = x0 + i;
-            if (px < 0 || px >= W) continue;
-
-            int cx = i < radius ? radius : (i >= w - radius ? w - radius - 1 : i);
-            int cy = j < radius ? radius : (j >= h - radius ? h - radius - 1 : j);
-            int dx = i - cx, dy = j - cy;
-
-            if (dx * dx + dy * dy > radius * radius) continue;
-
-            fb[(size_t)py * fb_width + px] = glass_buf[(size_t)j * GLASS_W + i];
-        }
-    }
-
-    u32 edge = RGBA8_MAXALPHA(255, 255, 255);
-
-    for (int i = radius; i < w - radius; i++) {
-        int px = x0 + i;
-        if (px < 0 || px >= W) continue;
-
-        if (y0 >= 0 && y0 < H)
-            fb[(size_t)y0 * fb_width + px] =
-                blend_px(fb[(size_t)y0 * fb_width + px], edge, 60);
-        if (y0 + h - 1 >= 0 && y0 + h - 1 < H)
-            fb[(size_t)(y0 + h - 1) * fb_width + px] =
-                blend_px(fb[(size_t)(y0 + h - 1) * fb_width + px], edge, 30);
-    }
-
-    for (int j = radius; j < h - radius; j++) {
-        int py = y0 + j;
-        if (py < 0 || py >= H) continue;
-
-        if (x0 >= 0 && x0 < W)
-            fb[(size_t)py * fb_width + x0] =
-                blend_px(fb[(size_t)py * fb_width + x0], edge, 35);
-        if (x0 + w - 1 >= 0 && x0 + w - 1 < W)
-            fb[(size_t)py * fb_width + x0 + w - 1] =
-                blend_px(fb[(size_t)py * fb_width + x0 + w - 1], edge, 35);
-    }
-}
-
-/* --------------------------- иконки достижений --------------------------- */
+/* --------------------------- ачивки: иконки --------------------------- */
 
 static u32 *ach_icons[MAX_ACHIEVEMENTS];
 
@@ -807,56 +564,11 @@ static bool ask_search(char *out, size_t size)
     return true;
 }
 
-typedef struct {
-    int dir_x;
-    int dir_y;
-    int frames;
-} StickRepeat;
-
-// Возвращает шаг стика с автоповтором: -1/0/1 по каждой оси.
-static void stick_update(StickRepeat *st, HidAnalogStickState raw,
-                         int *out_x, int *out_y)
-{
-    int dx = 0, dy = 0;
-
-    if (raw.x > 16000) dx = 1;
-    else if (raw.x < -16000) dx = -1;
-
-    if (raw.y > 16000) dy = 1;
-    else if (raw.y < -16000) dy = -1;
-
-    *out_x = 0;
-    *out_y = 0;
-
-    if (dx == 0 && dy == 0) {
-        st->frames = 0;
-        st->dir_x = 0;
-        st->dir_y = 0;
-        return;
-    }
-
-    if (dx != st->dir_x || dy != st->dir_y) {
-        st->dir_x = dx;
-        st->dir_y = dy;
-        st->frames = 0;
-        *out_x = dx;
-        *out_y = dy;
-        return;
-    }
-
-    st->frames++;
-
-    if (st->frames > 16 && (st->frames % 4) == 0) {
-        *out_x = dx;
-        *out_y = dy;
-    }
-}
-
 /* ------------------------------ список строк ------------------------------ */
 
 typedef struct {
-    int kind;          // 0 = заголовок секции, 1 = достижение
-    int ach;           // индекс достижения (или счётчик для заголовка)
+    int kind;
+    int ach;
     const char *label;
     int y;
     int height;
@@ -932,6 +644,52 @@ static void build_list(const char *appid, const SteamAchievement *achievements,
     list_total_height = y;
 }
 
+/* ------------------------------- стики ------------------------------- */
+
+typedef struct {
+    int dir_x;
+    int dir_y;
+    int frames;
+} StickRepeat;
+
+static void stick_update(StickRepeat *st, HidAnalogStickState raw,
+                         int *out_x, int *out_y)
+{
+    int dx = 0, dy = 0;
+
+    if (raw.x > 16000) dx = 1;
+    else if (raw.x < -16000) dx = -1;
+
+    if (raw.y > 16000) dy = 1;
+    else if (raw.y < -16000) dy = -1;
+
+    *out_x = 0;
+    *out_y = 0;
+
+    if (dx == 0 && dy == 0) {
+        st->frames = 0;
+        st->dir_x = 0;
+        st->dir_y = 0;
+        return;
+    }
+
+    if (dx != st->dir_x || dy != st->dir_y) {
+        st->dir_x = dx;
+        st->dir_y = dy;
+        st->frames = 0;
+        *out_x = dx;
+        *out_y = dy;
+        return;
+    }
+
+    st->frames++;
+
+    if (st->frames > 16 && (st->frames % 4) == 0) {
+        *out_x = dx;
+        *out_y = dy;
+    }
+}
+
 /* --------------------------------- main --------------------------------- */
 
 int main(int argc, char **argv)
@@ -999,18 +757,13 @@ int main(int argc, char **argv)
 
     int selected = 0;
     int screen = 0;
-    int guide_open = 0;
     int only_locked = 0;
-
-    float toggle_anim = 0.0f;
-    float guide_anim = 0.0f;
 
     float grid_scroll = 0.0f, grid_target = 0.0f;
     float list_scroll = 0.0f, list_target = 0.0f;
     float drag_velocity = 0.0f;
 
     u32 shine_counter = 0;
-    int marquee_counter = 0;
 
     bool touch_down = false;
     int touch_start_x = 0, touch_start_y = 0;
@@ -1054,7 +807,7 @@ int main(int argc, char **argv)
                     abs(ty - touch_start_y) > 10)
                     touch_dragged = true;
 
-                if (touch_dragged && !guide_open) {
+                if (touch_dragged) {
                     drag_velocity = drag_velocity * 0.6f + (float)dy * 0.4f;
 
                     if (screen == 0) {
@@ -1072,45 +825,27 @@ int main(int argc, char **argv)
         } else if (touch_down) {
             touch_down = false;
 
-            if (touch_dragged && !guide_open) {
+            if (touch_dragged) {
                 float fling = -drag_velocity * 8.0f;
 
                 if (screen == 0) grid_target += fling;
                 else list_target += fling;
-            }
-
-            drag_velocity = 0.0f;
-
-            if (!touch_dragged) {
+            } else {
                 touch_tapped = true;
                 tap_x = touch_last_x;
                 tap_y = touch_last_y;
             }
 
+            drag_velocity = 0.0f;
             touch_dragged = false;
         }
-
-        /* ----------------------------- кнопки ----------------------------- */
-        if (kDown & HidNpadButton_Minus)
-            guide_open = !guide_open;
-        else if (guide_open && (kDown & HidNpadButton_B))
-            guide_open = 0;
 
         bool consumed = false;
 
         /* ------------------------------- тапы ------------------------------- */
         if (touch_tapped) {
-            bool in_bang = (tap_x >= 45 && tap_x <= 115 &&
-                            tap_y >= H - 95 && tap_y <= H - 25);
-
-            if (in_bang) {
-                guide_open = !guide_open;
-                consumed = true;
-            } else if (guide_open) {
-                guide_open = 0;
-                consumed = true;
-            } else if (screen == 0) {
-                if (tap_y >= 86 && tap_y <= 138) {
+            if (screen == 0) {
+                if (tap_y >= 82 && tap_y <= 134) {
                     char query[64];
                     snprintf(query, sizeof(query), "%s", search);
 
@@ -1128,16 +863,15 @@ int main(int argc, char **argv)
 
                     consumed = true;
                 } else if (tap_y >= GRID_Y0) {
-                    int col = (tap_x - GRID_X0) / GRID_STEP_X;
                     int row = (int)(((float)tap_y + grid_scroll - GRID_Y0) /
                                     (float)GRID_STEP_Y);
+                    int col = (tap_x - (W - (GRID_COLS * GRID_STEP_X - GRID_GAP_X)) / 2) /
+                              GRID_STEP_X;
 
                     if (col >= 0 && col < GRID_COLS && row >= 0) {
-                        int x0 = GRID_X0 + col * GRID_STEP_X;
                         int position = row * GRID_COLS + col;
 
-                        if (tap_x >= x0 && tap_x <= x0 + COVER_SIZE &&
-                            position < view_count) {
+                        if (position < view_count) {
                             selected = position;
                             kDown |= HidNpadButton_A;
                         }
@@ -1157,7 +891,7 @@ int main(int argc, char **argv)
         }
 
         /* ----------------------------- навигация ----------------------------- */
-        if (!guide_open && !consumed) {
+        if (!consumed) {
             if (screen == 0) {
                 if (view_count > 0) {
                     if (kDown & HidNpadButton_Right)
@@ -1200,7 +934,6 @@ int main(int argc, char **argv)
                     list_scroll = list_target = 0.0f;
 
                     if (game->steam_appid[0]) {
-                        // сначала локальный каталог (мгновенно), сеть — только если его нет
                         achievement_count = romfs_ready
                             ? load_catalog(game->steam_appid, achievements,
                                            MAX_ACHIEVEMENTS)
@@ -1302,7 +1035,7 @@ int main(int argc, char **argv)
         {
             int rows = (view_count + GRID_COLS - 1) / GRID_COLS;
             float content = (float)rows * GRID_STEP_Y;
-            float visible = (float)(H - GRID_Y0 - 60);
+            float visible = (float)(H - GRID_Y0);
             float max_scroll = content - visible;
 
             if (max_scroll < 0) max_scroll = 0;
@@ -1317,8 +1050,8 @@ int main(int argc, char **argv)
         }
 
         {
-            float view = (float)(LIST_BOTTOM - LIST_TOP);
-            float max_scroll = (float)list_total_height - view;
+            float view_h = (float)(LIST_BOTTOM - LIST_TOP);
+            float max_scroll = (float)list_total_height - view_h;
 
             if (max_scroll < 0) max_scroll = 0;
 
@@ -1341,89 +1074,60 @@ int main(int argc, char **argv)
         clip_bottom = H;
 
         if (screen == 0) {
+            int grid_x0 = (W - (GRID_COLS * GRID_STEP_X - GRID_GAP_X)) / 2;
+
             for (int i = 0; i < view_count; i++) {
                 int col = i % GRID_COLS;
                 int row = i / GRID_COLS;
 
-                int x = GRID_X0 + col * GRID_STEP_X;
+                int x = grid_x0 + col * GRID_STEP_X;
                 int y = GRID_Y0 + (int)((float)row * GRID_STEP_Y - grid_scroll);
 
-                if (y + COVER_SIZE + 30 < HEADER_H) continue;
+                if (y + CARD_H < HEADER_H) continue;
                 if (y > H) continue;
 
                 int game_index = view[i];
                 const u32 *cover = library_cover(games[game_index].title_id);
 
-                if (i == selected) {
-                    u32 glow = library_cover_color(games[game_index].title_id);
-
-                    draw_glow(pixels, x, y, COVER_SIZE, 18, 30, glow, 80);
-
-                    if (cover)
-                        round_rect(pixels, x - 4, y - 4, COVER_SIZE + 8,
-                                   COVER_SIZE + 8, 21, glow);
-                }
+                if (i == selected)
+                    round_rect(pixels, x - 2, y - 2, CARD_W + 4, CARD_H + 4,
+                               8, COLOR_SELECT);
 
                 if (cover)
-                    draw_cover(pixels, x, y, COVER_SIZE, cover,
-                               i == selected ? COLOR_ACCENT : COLOR_BG, 18);
+                    draw_poster(pixels, x, y, CARD_W, CARD_H, cover,
+                                i == selected ? COLOR_SELECT : COLOR_BG, 6);
                 else
-                    round_rect(pixels, x, y, COVER_SIZE, COVER_SIZE, 18, COLOR_PANEL);
-
-                clip_left = x;
-                clip_right = x + COVER_SIZE;
-
-                int name_y = y + COVER_SIZE + 26;
-
-                if (i == selected) {
-                    int name_width = measure_text(face_small, games[game_index].name);
-                    int cycle = name_width + 60;
-                    if (cycle < 1) cycle = 1;
-
-                    int shift = marquee_counter % cycle;
-
-                    draw_text(face_small, pixels, x - shift, name_y,
-                              games[game_index].name);
-                    draw_text(face_small, pixels, x - shift + cycle, name_y,
-                              games[game_index].name);
-                } else {
-                    set_text_color(200, 205, 215);
-                    draw_text(face_small, pixels, x, name_y, games[game_index].name);
-                    reset_text_color();
-                }
-
-                clip_left = 0;
-                clip_right = W;
+                    round_rect(pixels, x, y, CARD_W, CARD_H, 6, COLOR_PANEL);
             }
 
             rect(pixels, 0, 0, W, HEADER_H, COLOR_BG);
 
-            draw_text_shine(face, pixels, 55, 58, "NX-Stach", (int)shine_counter);
+            draw_text_shine(face, pixels, 55, 62, "NX-Stach", (int)shine_counter);
 
-            round_rect(pixels, 55, 86, 1170, 52, 14, COLOR_PANEL);
+            round_rect(pixels, 55, 82, 1170, 52, 14, COLOR_PANEL);
 
             if (search[0]) {
                 set_text_color(230, 232, 238);
-                draw_text(face_small, pixels, 78, 120, search);
+                draw_text(face_small, pixels, 78, 116, search);
             } else {
                 set_text_color(120, 125, 135);
-                draw_text(face_small, pixels, 78, 120, "Поиск...");
+                draw_text(face_small, pixels, 78, 116, "Поиск...");
             }
             reset_text_color();
 
-            set_text_color(225, 230, 240);
-            draw_icon_letter(face_small, pixels, W - 96, 98, 28, "Y");
+            set_text_color(110, 115, 125);
+            draw_text(face_small, pixels, W - 90, 116, "Y");
             reset_text_color();
 
             if (view_count == 0) {
                 set_text_color(150, 155, 165);
-                draw_text(face, pixels, 55, 340, "Ничего не найдено");
+                draw_text(face, pixels, 55, 320, "Ничего не найдено");
                 reset_text_color();
             }
 
             int rows = (view_count + GRID_COLS - 1) / GRID_COLS;
-            draw_scrollbar(pixels, W - 24, GRID_Y0, H - GRID_Y0 - 80,
-                           rows * GRID_STEP_Y, 2 * GRID_STEP_Y,
+            draw_scrollbar(pixels, W - 22, GRID_Y0, H - GRID_Y0 - 20,
+                           rows * GRID_STEP_Y, H - GRID_Y0,
                            (int)grid_scroll);
         } else if (view_count > 0) {
             const Game *game = &games[view[selected]];
@@ -1513,7 +1217,7 @@ int main(int argc, char **argv)
             clip_top = 0;
             clip_bottom = H;
 
-            draw_scrollbar(pixels, W - 24, LIST_TOP, LIST_BOTTOM - LIST_TOP,
+            draw_scrollbar(pixels, W - 22, LIST_TOP, LIST_BOTTOM - LIST_TOP,
                            list_total_height, LIST_BOTTOM - LIST_TOP,
                            (int)list_scroll);
 
@@ -1571,117 +1275,17 @@ int main(int argc, char **argv)
             draw_text(face_small, pixels, 55, 280, "Только невыполненные");
             reset_text_color();
 
-            {
-                int kn = (int)(toggle_anim * 38.0f);
-                round_rect(pixels, 1140, 252, 62, 32, 16,
-                           toggle_anim > 0.5f ? COLOR_ACCENT : COLOR_TRACK);
-                round_rect(pixels, 1144 + kn, 256, 24, 24, 12,
-                           RGBA8_MAXALPHA(245, 248, 252));
-            }
-        }
+            int kn = (int)((only_locked ? 1.0f : 0.0f) * 38.0f);
 
-        // кнопка Guide
-        {
-            const int bx = 55, by = H - 85, size = 52;
-
-            if (guide_anim > 0.02f)
-                draw_glow(pixels, bx - 8, by - 8, size + 16, (size + 16) / 2, 18,
-                          COLOR_ACCENT, (int)(60 * guide_anim));
-
-            u32 ring = blend_px(COLOR_BG, COLOR_ACCENT,
-                                guide_anim > 0.5f ? 200 : 110);
-
-            round_rect(pixels, bx, by, size, size, size / 2, ring);
-            round_rect(pixels, bx + 2, by + 2, size - 4, size - 4,
-                       (size - 4) / 2, blend_px(COLOR_BG, RGBA8_MAXALPHA(70, 74, 82), 200));
-
-            int glyph = measure_text(face, "!");
-            set_text_color(235, 240, 250);
-            draw_text(face, pixels, bx + size / 2 - glyph / 2,
-                      by + size / 2 + 10, "!");
-            reset_text_color();
-        }
-
-        if (guide_anim > 0.04f) {
-            const int w = 620, h = 470;
-            const int x = (W - w) / 2;
-            const int y = (H - h) / 2 + (int)((1.0f - guide_anim) * 26.0f);
-
-            // лёгкое затемнение фона
-            for (int py = 0; py < H; py++) {
-                for (int px = 0; px < W; px++) {
-                    u32 *dst = &pixels[(size_t)py * fb_width + px];
-                    *dst = blend_px(*dst, RGBA8_MAXALPHA(0, 0, 0), 70);
-                }
-            }
-
-            if (!glass_ready)
-                glass_capture(pixels, x, y, w, h);
-
-            // мягкая тень
-            for (int i = 2; i >= 1; i--) {
-                u32 shadow = blend_px(COLOR_BG, RGBA8_MAXALPHA(0, 0, 0), 40 * i / 2);
-                round_rect(pixels, x - i * 6, y - i * 6, w + i * 12, h + i * 12,
-                           26 + i * 5, shadow);
-            }
-
-            glass_draw(pixels, x, y, w, h, 26);
-
-            draw_text(face, pixels, x + 32, y + 48, "Guide");
-
-            struct {
-                int kind;
-                const char *label;
-            } rows[] = {
-                { 0, "Выбор игры" },
-                { 1, "Прокрутка" },
-                { 2, "Открыть игру" },
-                { 3, "Назад" },
-                { 4, "Поиск" },
-                { 5, "Этот гайд" },
-                { 6, "Выход" },
-                { 7, "Прокрутка и нажатие" },
-            };
-
-            int row_y = y + 106;
-
-            for (unsigned i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
-                int ix = x + 40;
-                int iy = row_y - 24;
-
-                switch (rows[i].kind) {
-                case 0: draw_icon_dpad(pixels, ix, iy, 34); break;
-                case 1: draw_icon_stick(pixels, ix, iy, 34); break;
-                case 2: draw_icon_letter(face, pixels, ix, iy, 34, "A"); break;
-                case 3: draw_icon_letter(face, pixels, ix, iy, 34, "B"); break;
-                case 4: draw_icon_letter(face, pixels, ix, iy, 34, "Y"); break;
-                case 5: draw_icon_pill(face, pixels, ix, iy + 8, 34, 18, "-"); break;
-                case 6: draw_icon_pill(face, pixels, ix, iy + 8, 34, 18, "+"); break;
-                case 7: draw_icon_touch(pixels, ix, iy, 34); break;
-                }
-
-                set_text_color(210, 215, 225);
-                draw_text(face_small, pixels, x + 100, row_y, rows[i].label);
-                reset_text_color();
-
-                row_y += 42;
-            }
-
-            set_text_color(125, 130, 140);
-            draw_text(face_small, pixels, x + 40, y + h - 26, "Тап вне окна - закрыть");
-            reset_text_color();
+            round_rect(pixels, 1140, 252, 62, 32, 16,
+                       only_locked ? COLOR_ACCENT : COLOR_TRACK);
+            round_rect(pixels, 1144 + kn, 256, 24, 24, 12,
+                       RGBA8_MAXALPHA(245, 248, 252));
         }
 
         framebufferEnd(&fb);
 
-        if (!guide_open && guide_anim < 0.05f)
-            glass_ready = 0;
-
-        toggle_anim += ((only_locked ? 1.0f : 0.0f) - toggle_anim) * 0.25f;
-        guide_anim += ((guide_open ? 1.0f : 0.0f) - guide_anim) * 0.22f;
-
         shine_counter = (u32)(shine_counter + 30);
-        marquee_counter = (marquee_counter + 3) % 100000;
     }
 
     if (net_ready) net_exit();
@@ -1690,7 +1294,6 @@ int main(int argc, char **argv)
     save_exit();
     library_exit();
     if (romfs_ready) romfsExit();
-    free(glass_buf);
     framebufferClose(&fb);
     FT_Done_Face(face_small);
     FT_Done_Face(face);
