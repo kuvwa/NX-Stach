@@ -256,8 +256,19 @@ static int compare_games(const void *a, const void *b) {
 // Отсекаем хоумбрю-лончеры, их в списке игр быть не должно.
 static bool looks_like_homebrew(const char *name) {
     static const char *skip[] = {
-        "hbmenu", "Homebrew", "DBI", "Goldleaf", "Atmosphere",
-        "nx-hbmenu", "Awoo", "Tinfoil", "NUT", "ftpd", "sys-ftpd",
+        // эмуляторы
+        "PPSSPP", "RetroArch", "melonDS", "mGBA", "DeSmuME", "Dolphin",
+        "Citra", "yuzu", "Skyline", "Strato", "Flycast", "DuckStation",
+        "Snes9x", "FCEUX", "Genesis Plus", "Mednafen", "Vita3K",
+        // лончеры и установщики
+        "hbmenu", "Homebrew", "DBI", "Goldleaf", "Awoo", "Tinfoil",
+        "Appstore", "hb-appstore", "NUT", "ftpd", "sys-ftpd",
+        // утилиты
+        "NX-Shell", "NXThemes", "nx-themes", "EdiZon", "Checkpoint",
+        "JKSV", "Lockpick", "TegraExplorer", "Hekate", "Fizeau",
+        "sys-clk", "Status Monitor", "SimpleModManager",
+        // стриминг
+        "Moonlight", "Chiaki", "PSPlay", "Steam Link",
     };
 
     if (!name) return true;
