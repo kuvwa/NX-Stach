@@ -866,34 +866,6 @@ static void build_list(const char *appid, const SteamAchievement *achievements,
     list_total_height = y;
 }
 
-static void draw_progress(Framebuffer *fb, FT_Face face, FT_Face face_small,
-                          const char *title, const char *line, int percent)
-{
-    u32 stride;
-    u32 *px = (u32 *)framebufferBegin(fb, &stride);
-    fb_width = stride / sizeof(u32);
-
-    fill_bg(px, COLOR_BG);
-
-    clip_left = 0;
-    clip_right = W;
-    clip_top = 0;
-    clip_bottom = H;
-
-    draw_text(face, px, 55, 300, title);
-
-    set_text_color(170, 175, 185);
-    draw_text(face_small, px, 55, 340, line);
-    reset_text_color();
-
-    round_rect(px, 55, 370, 1170, 16, 8, COLOR_TRACK);
-
-    if (percent > 0)
-        round_rect(px, 55, 370, 1170 * percent / 100, 16, 8, COLOR_ACCENT);
-
-    framebufferEnd(fb);
-}
-
 /* ------------------------------- стики ------------------------------- */
 
 typedef struct {
@@ -1140,8 +1112,6 @@ int main(int argc, char **argv)
                     screen = 0;
                     ach_icons_clear();
                     consumed = true;
-                } else if (tap_y >= 30 && tap_y <= 78 && tap_x >= 980) {
-                    kDown |= HidNpadButton_Y;
                 } else if (tap_y >= 276 && tap_y <= 332) {
                     only_locked = !only_locked;
                     list_scroll = list_target = 0.0f;
@@ -1305,25 +1275,6 @@ int main(int argc, char **argv)
                     screen = 1;
                 }
             } else if (screen == 1) {
-                if (kDown & HidNpadButton_Y) {
-                    Game *g = &games[view[selected]];
-
-                    draw_progress(&fb, face, face_small, g->name,
-                                  "Выгружаем сейв на карту...", 40);
-
-                    int copied = gamesave_dump_to_sd(g->title_id);
-
-                    if (copied > 0) {
-                        snprintf(toast, sizeof(toast),
-                                 "Сейв выгружен: %d файлов (dumps/%016llX)",
-                                 copied, (unsigned long long)g->title_id);
-                    } else {
-                        snprintf(toast, sizeof(toast), "Сейв не найден или пуст");
-                    }
-
-                    toast_frames = 260;
-                }
-
                 if (kDown & HidNpadButton_B) {
                     screen = 0;
                     ach_icons_clear();
@@ -1647,23 +1598,6 @@ int main(int argc, char **argv)
             draw_text(face_small, pixels, 200, 110, stats);
             reset_text_color();
 
-            {
-                const char *label = "Выгрузить сейв";
-                int lw = measure_text(face_small, label);
-                int bw = lw + 78;
-                int bx = W - 55 - bw;
-                int by = 34;
-
-                round_rect(pixels, bx, by, bw, 40, 12, COLOR_PANEL);
-
-                round_rect(pixels, bx + 12, by + 8, 24, 24, 12,
-                           RGBA8_MAXALPHA(72, 77, 86));
-
-                set_text_color(236, 241, 250);
-                draw_text(face_small, pixels, bx + 18, by + 26, "Y");
-                draw_text(face_small, pixels, bx + 46, by + 26, label);
-                reset_text_color();
-            }
 
             round_rect(pixels, 55, 176, 1170, 76, 16, COLOR_PANEL);
 
