@@ -1,0 +1,27 @@
+# build artifacts
+build/
+tracker/build/
+tracker/out/
+*.o
+*.d
+*.elf
+*.nro
+*.nsp
+*.nacp
+*.ovl
+*.lst
+*.map
+
+# local/build leftovers
+*.bak
+*.bak2
+*.bak3
+*.before_sync
+
+# research dumps (kept out of history, files stay on disk)
+research/*.js
+research/*.html
+
+# OS
+Thumbs.db
+desktop.ini

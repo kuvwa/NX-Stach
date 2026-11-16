@@ -1,0 +1,23 @@
+{
+  "appid": "219150",
+  "achievements": [
+    {
+      "id": "achievement_1",
+      "name": "First Steps",
+      "description": "Complete the first mission",
+      "icon": ""
+    },
+    {
+      "id": "achievement_2",
+      "name": "Getting Started",
+      "description": "Complete several missions",
+      "icon": ""
+    },
+    {
+      "id": "achievement_3",
+      "name": "Explorer",
+      "description": "Discover a hidden secret",
+      "icon": ""
+    }
+  ]
+}
