@@ -37,6 +37,9 @@
 #define GRID_Y0 188
 #define HEADER_H 168
 
+// обложки временно выключены (декодер валит приложение)
+#define COVERS_ENABLED 0
+
 #define ACH_ICON_SIZE 44
 #define ROW_H 72
 #define SECTION_H 40
@@ -1738,7 +1741,9 @@ int main(int argc, char **argv)
                 if (y > H) continue;
 
                 int game_index = view[i];
-                const u32 *cover = library_cover(games[game_index].title_id);
+                const u32 *cover = COVERS_ENABLED
+                                    ? library_cover(games[game_index].title_id)
+                                    : NULL;
 
                 if (i == selected) {
                     u32 glow = library_cover_color(games[game_index].title_id);
@@ -1760,8 +1765,18 @@ int main(int argc, char **argv)
                 if (cover)
                     draw_cover(pixels, x, y, CARD_W, cover,
                                i == selected ? COLOR_SELECT : COLOR_BG, 8);
-                else
+                else {
                     round_rect(pixels, x, y, CARD_W, CARD_H, 8, COLOR_PANEL);
+
+                    clip_left = x + 8;
+                    clip_right = x + CARD_W - 8;
+                    set_text_color(205, 210, 220);
+                    draw_text(face_small, pixels, x + 10, y + CARD_H / 2,
+                              games[game_index].name);
+                    reset_text_color();
+                    clip_left = 0;
+                    clip_right = W;
+                }
 
                 if (i == selected) {
                     // стеклянная плашка с названием
@@ -1972,7 +1987,7 @@ int main(int argc, char **argv)
             rect(pixels, 0, 0, W, LIST_TOP - 6, COLOR_BG);
             draw_header_bg(pixels);
 
-            const u32 *cover = library_cover(game->title_id);
+            const u32 *cover = COVERS_ENABLED ? library_cover(game->title_id) : NULL;
             if (cover)
                 draw_cover(pixels, 55, 38, 120, cover, COLOR_BG, 16);
             else
