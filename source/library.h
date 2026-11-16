@@ -5,7 +5,7 @@
 #include <stddef.h>
 
 #define MAX_GAMES 64
-#define LIB_COVER_W 270
+#define LIB_COVER_W 190
 #define LIB_COVER_H 190
 
 typedef struct {
