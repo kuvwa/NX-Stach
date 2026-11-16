@@ -9,6 +9,7 @@
 
 #define SAMPLE_RATE 48000
 #define CHANNELS 2
+#define POOL_SLOTS 32
 #define MAX_SECONDS 0.30f
 #define MAX_FRAMES ((int)(SAMPLE_RATE * MAX_SECONDS))
 #define MAX_BYTES ((size_t)MAX_FRAMES * CHANNELS * sizeof(s16))
@@ -18,8 +19,9 @@ typedef struct {
     s16 *data;
 } SfxSlot;
 
-static AudioOutBuffer out_buffer;
-static s16 *out_data = NULL;
+static AudioOutBuffer pool[POOL_SLOTS];
+static s16 *pool_data[POOL_SLOTS];
+static int pool_next = 0;
 static bool ready = false;
 
 static s16 *samples[SFX_COUNT];
@@ -114,17 +116,20 @@ bool audio_init(void)
     if (R_FAILED(audoutStartAudioOut()))
         return false;
 
-    out_data = memalign(0x1000, (MAX_BYTES + 0xFFF) & ~0xFFF);
+    for (int i = 0; i < POOL_SLOTS; i++) {
+        pool_data[i] = memalign(0x1000, (MAX_BYTES + 0xFFF) & ~0xFFF);
 
-    if (!out_data)
-        return false;
+        if (!pool_data[i])
+            return false;
 
-    memset(&out_buffer, 0, sizeof(AudioOutBuffer));
-    out_buffer.buffer = out_data;
-    out_buffer.buffer_size = (u32)((MAX_BYTES + 0xFFF) & ~0xFFF);
-    out_buffer.data_size = 0;
-    out_buffer.data_offset = 0;
+        memset(&pool[i], 0, sizeof(AudioOutBuffer));
+        pool[i].buffer = pool_data[i];
+        pool[i].buffer_size = (u32)((MAX_BYTES + 0xFFF) & ~0xFFF);
+        pool[i].data_size = 0;
+        pool[i].data_offset = 0;
+    }
 
+    pool_next = 0;
     ready = true;
     return true;
 }
@@ -136,8 +141,10 @@ void audio_exit(void)
     audoutStopAudioOut();
     audoutExit();
 
-    free(out_data);
-    out_data = NULL;
+    for (int i = 0; i < POOL_SLOTS; i++) {
+        free(pool_data[i]);
+        pool_data[i] = NULL;
+    }
 
     for (int i = 0; i < SFX_COUNT; i++) {
         free(samples[i]);
@@ -153,15 +160,21 @@ void audio_play(SfxId id)
     if (!ready || id < 0 || id >= SFX_COUNT)
         return;
 
-    if (!samples[id] || sample_bytes[id] == 0 || !out_data)
+    if (!samples[id] || sample_bytes[id] == 0)
         return;
 
-    memcpy(out_data, samples[id], sample_bytes[id]);
+    if (sample_bytes[id] > MAX_BYTES)
+        return;
 
-    out_buffer.data_size = (u32)sample_bytes[id];
-    out_buffer.data_offset = 0;
+    // Кольцевой пул: буфер не переиспользуется, пока не пройдёт 32 звука
+    // (~1.5 секунды), поэтому звук никогда не перезаписывается на ходу.
+    int slot = pool_next;
+    pool_next = (pool_next + 1) % POOL_SLOTS;
 
-    AudioOutBuffer *released = NULL;
+    memcpy(pool_data[slot], samples[id], sample_bytes[id]);
 
-    audoutPlayBuffer(&out_buffer, &released);
+    pool[slot].data_size = (u32)sample_bytes[id];
+    pool[slot].data_offset = 0;
+
+    audoutAppendAudioOutBuffer(&pool[slot]);
 }
