@@ -20,12 +20,25 @@ static bool ns_ready = false;
 typedef struct {
     u64 title_id;
     u32 *pixels;
+    u32 color;
 } CoverSlot;
 
 static CoverSlot covers[CACHE_SLOTS];
+static u32 last_color = RGBA8_MAXALPHA(120, 200, 255);
 static int cover_next = 0;
 
 bool library_online(void) { return ns_ready; }
+
+u32 library_cover_color(u64 title_id)
+{
+    title_id &= TITLE_ID_MASK;
+
+    for (int i = 0; i < CACHE_SLOTS; i++)
+        if (covers[i].pixels && covers[i].title_id == title_id)
+            return covers[i].color;
+
+    return last_color;
+}
 
 static bool ensure_ns(void) {
     if (ns_ready) return true;
@@ -361,9 +374,45 @@ const u32 *library_cover(u64 title_id) {
     int slot = cover_next;
     cover_next = (cover_next + 1) % CACHE_SLOTS;
 
+    // средний цвет обложки — для подсветки
+    u64 sr = 0, sg = 0, sb = 0, n = 0;
+
+    for (int y = 0; y < LIB_COVER_H; y += 4) {
+        for (int x = 0; x < LIB_COVER_W; x += 4) {
+            u32 c = pixels[(size_t)y * LIB_COVER_W + x];
+            sr += c & 0xFF;
+            sg += (c >> 8) & 0xFF;
+            sb += (c >> 16) & 0xFF;
+            n++;
+        }
+    }
+
+    int cr = 120, cg = 200, cb = 255;
+
+    if (n > 0) {
+        cr = (int)(sr / n);
+        cg = (int)(sg / n);
+        cb = (int)(sb / n);
+
+        int mx = cr > cg ? (cr > cb ? cr : cb) : (cg > cb ? cg : cb);
+        int k = mx > 0 ? 235 * 100 / mx : 100;
+        if (k > 260) k = 260;
+
+        cr = cr * k / 100;
+        cg = cg * k / 100;
+        cb = cb * k / 100;
+
+        if (cr > 235) cr = 235;
+        if (cg > 235) cg = 235;
+        if (cb > 235) cb = 235;
+    }
+
     free(covers[slot].pixels);
     covers[slot].pixels = pixels;
     covers[slot].title_id = title_id;
+    covers[slot].color = RGBA8_MAXALPHA(cr, cg, cb);
+
+    last_color = covers[slot].color;
 
     return pixels;
 }

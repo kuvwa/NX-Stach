@@ -74,17 +74,23 @@ int steam_parse_achievements(const char* text,
     json_array_foreach(array, i, item) {
         if (count >= max_achievements) break;
 
-        copy_string(achievements[count].id,
-                    sizeof(achievements[count].id),
-                    json_string_value(json_object_get(item, "internal_name")));
+        json_t *v;
 
-        copy_string(achievements[count].name,
-                    sizeof(achievements[count].name),
-                    json_string_value(json_object_get(item, "localized_name")));
+        v = json_object_get(item, "internal_name");
+        if (!json_is_string(v)) v = json_object_get(item, "id");
+        copy_string(achievements[count].id, sizeof(achievements[count].id),
+                    json_string_value(v));
 
+        v = json_object_get(item, "localized_name");
+        if (!json_is_string(v)) v = json_object_get(item, "name");
+        copy_string(achievements[count].name, sizeof(achievements[count].name),
+                    json_string_value(v));
+
+        v = json_object_get(item, "localized_desc");
+        if (!json_is_string(v)) v = json_object_get(item, "description");
         copy_string(achievements[count].description,
                     sizeof(achievements[count].description),
-                    json_string_value(json_object_get(item, "localized_desc")));
+                    json_string_value(v));
 
         copy_string(achievements[count].icon,
                     sizeof(achievements[count].icon),

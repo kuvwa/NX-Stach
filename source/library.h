@@ -22,5 +22,8 @@ int library_load(Game *games, int max_games);
 // NULL, если обложку получить не удалось.
 const u32 *library_cover(u64 title_id);
 
+// Средний цвет обложки (для свечения).
+u32 library_cover_color(u64 title_id);
+
 bool library_online(void);
 void library_exit(void);
