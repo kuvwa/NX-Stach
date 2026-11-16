@@ -963,6 +963,37 @@ static void beat_flush(void)
     fclose(f);
 }
 
+static void draw_cover_loading(Framebuffer *fb, FT_Face face, FT_Face face_small,
+                               int done, int total)
+{
+    u32 stride;
+    u32 *px = (u32 *)framebufferBegin(fb, &stride);
+    fb_width = stride / sizeof(u32);
+
+    fill_bg(px, COLOR_BG);
+
+    clip_left = 0;
+    clip_right = W;
+    clip_top = 0;
+    clip_bottom = H;
+
+    draw_text(face, px, 55, 320, "Загрузка обложек...");
+
+    char line[64];
+    snprintf(line, sizeof(line), "%d / %d", done, total);
+
+    set_text_color(170, 175, 185);
+    draw_text(face_small, px, 55, 356, line);
+    reset_text_color();
+
+    round_rect(px, 55, 380, 1170, 14, 7, COLOR_TRACK);
+
+    if (total > 0 && done > 0)
+        round_rect(px, 55, 380, 1170 * done / total, 14, 7, COLOR_ACCENT);
+
+    framebufferEnd(fb);
+}
+
 /* --------------------------------- main --------------------------------- */
 
 int main(int argc, char **argv)
@@ -1010,6 +1041,22 @@ int main(int argc, char **argv)
 
     Game games[MAX_GAMES];
     int game_count = library_load(games, MAX_GAMES);
+
+    // обложки грузим один раз здесь: в кадре декодирования больше нет
+    for (int i = 0; i < game_count; i++) {
+        g_detail_id = (unsigned long long)games[i].title_id;
+        beat("cover", i);
+
+        if ((i % 2) == 0)
+            beat_flush();
+
+        draw_cover_loading(&fb, face, face_small, i, game_count);
+
+        library_cover(games[i].title_id);
+    }
+
+    beat("cover_done", game_count);
+    beat_flush();
 
     bool romfs_ready = R_SUCCEEDED(romfsInit());
 
@@ -1448,7 +1495,7 @@ int main(int argc, char **argv)
 
                 if ((i % 3) == 0 || i == selected)
                     beat_flush();
-                const u32 *cover = library_cover(games[game_index].title_id);
+                const u32 *cover = library_cover_cached(games[game_index].title_id);
 
                 if (i == selected) {
                     u32 glow = library_cover_color(games[game_index].title_id);
@@ -1640,7 +1687,7 @@ int main(int argc, char **argv)
             rect(pixels, 0, 0, W, LIST_TOP - 6, COLOR_BG);
             draw_header_bg(pixels);
 
-            const u32 *cover = library_cover(game->title_id);
+            const u32 *cover = library_cover_cached(game->title_id);
             if (cover)
                 draw_cover(pixels, 55, 38, 120, cover, COLOR_BG, 16);
             else

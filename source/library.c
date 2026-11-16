@@ -10,7 +10,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#define CACHE_SLOTS 24
+#define CACHE_SLOTS 48
 #define TITLE_ID_MASK 0xFFFFFFFFFFFFF000ULL
 #define GAMES_JSON "sdmc:/switch/NX-Stach/games.json"
 
@@ -472,4 +472,16 @@ const u32 *library_cover(u64 title_id) {
     last_color = covers[slot].color;
 
     return pixels;
+}
+
+// Только из кэша: ничего не декодирует (безопасно вызывать в кадре).
+const u32 *library_cover_cached(u64 title_id)
+{
+    title_id &= TITLE_ID_MASK;
+
+    for (int i = 0; i < CACHE_SLOTS; i++)
+        if (covers[i].pixels && covers[i].title_id == title_id)
+            return covers[i].pixels;
+
+    return NULL;
 }
