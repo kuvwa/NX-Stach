@@ -25,5 +25,8 @@ const u32 *library_cover(u64 title_id);
 // Средний цвет обложки (для свечения).
 u32 library_cover_color(u64 title_id);
 
+// Самый частый цвет обложки (для фона шапки).
+u32 library_dominant_color(u64 title_id);
+
 bool library_online(void);
 void library_exit(void);

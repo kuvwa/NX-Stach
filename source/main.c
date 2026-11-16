@@ -30,8 +30,8 @@
 #define GRID_GAP_Y 30
 #define GRID_STEP_X (CARD_W + GRID_GAP_X)
 #define GRID_STEP_Y (CARD_H + GRID_GAP_Y)
-#define GRID_Y0 160
-#define HEADER_H 140
+#define GRID_Y0 178
+#define HEADER_H 150
 
 #define ACH_ICON_SIZE 44
 #define ROW_H 72
@@ -412,86 +412,47 @@ static void draw_glow(u32 *fb, int x, int y, int size, int radius,
 static u32 *header_bg = NULL;
 static int header_bg_ready = 0;
 
-// Сильно размытая и затемнённая обложка — фон шапки.
+// Фон шапки: самый частый цвет обложки, затемнённый и растянутый в градиент.
 static void build_header_bg(u64 title_id)
 {
     header_bg_ready = 0;
-
-    const u32 *cover = library_cover(title_id);
-
-    if (!cover) return;
 
     if (!header_bg) {
         header_bg = malloc((size_t)W * HEADER_BG_H * sizeof(u32));
         if (!header_bg) return;
     }
 
-    const int block = 14;
-    int sw = (W + block - 1) / block;
-    int sh = (HEADER_BG_H + block - 1) / block;
+    library_cover(title_id);
 
-    u32 *small = malloc((size_t)sw * sh * sizeof(u32));
+    u32 dom = library_dominant_color(title_id);
 
-    if (!small) return;
+    if (!dom)
+        dom = library_cover_color(title_id);
 
-    // уменьшенная копия обложки, растянутой на весь заголовок
-    for (int sy = 0; sy < sh; sy++) {
-        int sy_src = sy * block * LIB_COVER_H / HEADER_BG_H;
-        if (sy_src >= LIB_COVER_H) sy_src = LIB_COVER_H - 1;
+    if (!dom) {
+        for (int y = 0; y < HEADER_BG_H; y++)
+            for (int x = 0; x < W; x++)
+                header_bg[(size_t)y * W + x] = COLOR_BG;
 
-        for (int sx = 0; sx < sw; sx++) {
-            int sx_src = sx * block * LIB_COVER_W / W;
-            if (sx_src >= LIB_COVER_W) sx_src = LIB_COVER_W - 1;
-
-            small[(size_t)sy * sw + sx] = cover[(size_t)sy_src * LIB_COVER_W + sx_src];
-        }
+        header_bg_ready = 1;
+        return;
     }
+
+    // приглушаем и затемняем цвет
+    u32 base = blend_px(dom, RGBA8_MAXALPHA(12, 13, 17), 105);
 
     for (int y = 0; y < HEADER_BG_H; y++) {
-        int iy = y * sh / HEADER_BG_H;
-        int iy1 = (iy + 1 < sh) ? iy + 1 : iy;
-        int ty = (y * sh) % HEADER_BG_H;
+        float t = 1.0f - (float)y / (float)HEADER_BG_H;
+        t = t * t;
 
-        for (int x = 0; x < W; x++) {
-            int ix = x * sw / W;
-            int ix1 = (ix + 1 < sw) ? ix + 1 : ix;
-            int tx = (x * sw) % W;
+        int alpha = (int)(200.0f * t);
 
-            u32 c00 = small[(size_t)iy * sw + ix];
-            u32 c10 = small[(size_t)iy * sw + ix1];
-            u32 c01 = small[(size_t)iy1 * sw + ix];
-            u32 c11 = small[(size_t)iy1 * sw + ix1];
+        u32 color = blend_px(COLOR_BG, base, alpha);
 
-            int r = 0, g = 0, b = 0;
-
-            for (int k = 0; k < 2; k++) {
-                int wy = k ? ty : (block - ty);
-                u32 t = k ? c01 : c00;
-                u32 bo = k ? c11 : c10;
-
-                for (int m = 0; m < 2; m++) {
-                    int wx = m ? tx : (block - tx);
-                    u32 c = m ? bo : t;
-                    int wgt = wx * wy;
-
-                    r += (c & 0xFF) * wgt;
-                    g += ((c >> 8) & 0xFF) * wgt;
-                    b += ((c >> 16) & 0xFF) * wgt;
-                }
-            }
-
-            int div = block * block;
-            u32 blurred = RGBA8_MAXALPHA(r / div, g / div, b / div);
-
-            // затемняем к низу, чтобы текст читался
-            int alpha = 150 + 70 * y / HEADER_BG_H;
-
-            header_bg[(size_t)y * W + x] =
-                blend_px(blurred, RGBA8_MAXALPHA(10, 11, 14), alpha);
-        }
+        for (int x = 0; x < W; x++)
+            header_bg[(size_t)y * W + x] = color;
     }
 
-    free(small);
     header_bg_ready = 1;
 }
 
@@ -1356,9 +1317,11 @@ int main(int argc, char **argv)
                     u32 glow = library_cover_color(games[game_index].title_id);
                     int grow = (int)(hover_anim * 4.0f);
 
+                    u32 glow_dark = blend_px(glow, RGBA8_MAXALPHA(0, 0, 0), 90);
+
                     draw_glow(pixels, x - grow, y - grow, CARD_W + grow * 2,
-                              10, 30 + grow, glow,
-                              (int)(48 + 42 * pulse));
+                              10, 30 + grow, glow_dark,
+                              (int)(30 + 30 * pulse));
 
                     u32 frame = blend_px(COLOR_BG, COLOR_SELECT,
                                          (int)(120 + 130 * pulse));
@@ -1395,7 +1358,7 @@ int main(int argc, char **argv)
                     if (cycle < 1) cycle = 1;
 
                     int shift = (name_w > CARD_W - 20)
-                        ? (int)((shine_counter / 2) % (u32)cycle) : 0;
+                        ? (int)((tick / 3) % (u32)cycle) : 0;
 
                     set_text_color(248, 250, 253);
                     draw_text(face_small, pixels, x + 10 - shift,
@@ -1599,7 +1562,7 @@ int main(int argc, char **argv)
         framebufferEnd(&fb);
 
         tick++;
-        pulse = 0.5f + 0.5f * sinf((float)tick * 0.19f);
+        pulse = 0.5f + 0.5f * sinf((float)tick * 0.055f);
 
         hover_anim += (1.0f - hover_anim) * 0.22f;
         shine_counter = (u32)(shine_counter + 30);

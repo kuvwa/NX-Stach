@@ -21,6 +21,7 @@ typedef struct {
     u64 title_id;
     u32 *pixels;
     u32 color;
+    u32 dominant;
 } CoverSlot;
 
 static CoverSlot covers[CACHE_SLOTS];
@@ -28,6 +29,17 @@ static u32 last_color = RGBA8_MAXALPHA(120, 200, 255);
 static int cover_next = 0;
 
 bool library_online(void) { return ns_ready; }
+
+u32 library_dominant_color(u64 title_id)
+{
+    title_id &= TITLE_ID_MASK;
+
+    for (int i = 0; i < CACHE_SLOTS; i++)
+        if (covers[i].pixels && covers[i].title_id == title_id)
+            return covers[i].dominant;
+
+    return 0;
+}
 
 u32 library_cover_color(u64 title_id)
 {
@@ -407,10 +419,33 @@ const u32 *library_cover(u64 title_id) {
         if (cb > 235) cb = 235;
     }
 
+    // самый частый цвет (грубая гистограмма 4 бита на канал)
+    static u16 hist[4096];
+    for (int i = 0; i < 4096; i++) hist[i] = 0;
+
+    for (int y = 0; y < LIB_COVER_H; y += 3) {
+        for (int x = 0; x < LIB_COVER_W; x += 3) {
+            u32 c = pixels[(size_t)y * LIB_COVER_W + x];
+            int idx = (((c >> 4) & 0xF) << 8) |
+                      (((c >> 12) & 0xF) << 4) |
+                      ((c >> 20) & 0xF);
+            if (hist[idx] < 60000) hist[idx]++;
+        }
+    }
+
+    int best = 0;
+    for (int i = 1; i < 4096; i++)
+        if (hist[i] > hist[best]) best = i;
+
+    int dr = ((best >> 8) & 0xF) * 17 + 8;
+    int dg = ((best >> 4) & 0xF) * 17 + 8;
+    int db = (best & 0xF) * 17 + 8;
+
     free(covers[slot].pixels);
     covers[slot].pixels = pixels;
     covers[slot].title_id = title_id;
     covers[slot].color = RGBA8_MAXALPHA(cr, cg, cb);
+    covers[slot].dominant = RGBA8_MAXALPHA(dr, dg, db);
 
     last_color = covers[slot].color;
 
