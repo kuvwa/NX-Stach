@@ -1859,6 +1859,16 @@ int main(int argc, char **argv)
                 clip_left = 120;
                 clip_right = 1010;
                 draw_text(face_small, pixels, 120, y + 26, achievements[index].name);
+
+                if (flag_count <= 0) {
+                    int nw = measure_text(face_small, achievements[index].name);
+
+                    set_text_color(226, 142, 142);
+                    draw_text(face_small, pixels, 120 + nw + 8, y + 26,
+                              "(added manually)");
+                    reset_text_color();
+                }
+
                 clip_left = 0;
                 clip_right = W;
 
